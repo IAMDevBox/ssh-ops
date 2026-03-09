@@ -1,0 +1,18 @@
+# PSMP proxy configuration example
+# All servers share the same proxy, userid, and account
+# Connection format: userid@account@server_host@proxy_host
+proxy:
+  type: psmp
+  host: psmp-proxy.example.com
+  user: your_user
+  account: your_account
+  auth: otp
+
+servers:
+- host: server001.example.com
+- host: server002.example.com
+
+tasks:
+- command: hostname
+- command: uname -a
+- command: df -h

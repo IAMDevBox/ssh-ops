@@ -1,0 +1,10 @@
+servers:
+- host: 127.0.0.1
+  port: 2222
+  username: test
+  password: test
+tasks:
+- command: hostname
+- command: whoami
+- command: echo "hello from ssh-ops"
+- command: df -h

@@ -1,0 +1,31 @@
+servers:
+- name: node1
+  host: 127.0.0.1
+  port: 2201
+  username: testuser
+  password: test123
+
+- name: node2
+  host: 127.0.0.1
+  port: 2202
+  username: testuser
+  password: test123
+
+- name: node3
+  host: 127.0.0.1
+  port: 2203
+  username: testuser
+  password: test123
+
+tasks:
+# - command: hostname
+# - command: whoami
+# - command: uptime
+- command: df -h
+- command: echo "hello from ssh-ops"
+- command: sleep 2
+- command: cat /etc/os-release
+#- command: /opt/app/wrong.sh
+- command: ls -ltr /home/testuser/
+# - command: ls -la /var/data/
+- command: /opt/app/status.sh

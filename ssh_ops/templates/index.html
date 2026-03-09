@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSH Ops Tool</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Consolas, monospace; background: #f5f5f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
+  header { background: #fff; padding: 10px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  header h1 { font-size: 16px; color: #2563eb; white-space: nowrap; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .config-bar { display: flex; align-items: center; gap: 6px; }
+  .config-bar select { padding: 3px 6px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-size: 12px; }
+  .config-bar .btn { padding: 3px 8px; font-size: 11px; }
+  .config-menu-wrap { position: relative; }
+  .config-menu-btn { padding: 2px 6px; font-size: 16px; line-height: 18px; border: 1px solid #bbb; background: #fff; border-radius: 3px; cursor: pointer; color: #555; }
+  .config-menu-btn:hover { background: #e8e8e8; }
+  .config-menu { display: none; position: absolute; right: 0; top: 100%; margin-top: 2px; background: #fff; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); z-index: 100; min-width: 140px; padding: 4px 0; }
+  .config-menu.show { display: block; }
+  .config-menu-item { display: flex; align-items: center; width: 100%; padding: 6px 14px; font-size: 12px; text-align: left; border: none; background: none; cursor: pointer; color: #333; white-space: nowrap; }
+  .config-menu-item .mi { display: inline-block; width: 16px; text-align: center; margin-right: 6px; flex-shrink: 0; }
+  .config-menu-item:hover { background: #f0f0f0; }
+  .config-menu-item.danger { color: #dc2626; }
+  .config-menu-item.danger:hover { background: #fef2f2; }
+  .status { font-size: 12px; color: #16a34a; white-space: nowrap; }
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  .panel { width: 320px; min-width: 160px; max-width: 600px; border-right: none; overflow-y: auto; padding: 10px; background: #fafafa; }
+  .divider { width: 4px; background: #ddd; cursor: col-resize; flex-shrink: 0; transition: background 0.15s; }
+  .divider:hover, .divider.active { background: #2563eb; }
+  .section-title { font-size: 12px; color: #888; text-transform: uppercase; margin: 12px 0 6px; }
+  .section-title:first-child { margin-top: 0; }
+
+  .server-item, .task-item { display: flex; align-items: center; padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 13px; margin: 2px 0; overflow: hidden; }
+  .server-item:hover, .task-item:hover { background: #e8e8e8; }
+  .server-item input { margin-right: 8px; flex-shrink: 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #bbb; display: inline-block; flex-shrink: 0; }
+  .dot.connected { background: #16a34a; }
+  .task-item { cursor: default; }
+  .task-item input { margin-right: 6px; flex-shrink: 0; }
+  .task-icon { font-size: 13px; margin-right: 6px; flex-shrink: 0; opacity: 0.6; width: 16px; text-align: center; }
+  .task-detail { color: #92700a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .task-modify { font-size: 10px; color: #d97706; margin-left: 4px; flex-shrink: 0; }
+  .task-actions { margin-left: auto; display: flex; align-items: center; gap: 2px; flex-shrink: 0; visibility: hidden; }
+  .task-item:hover .task-actions { visibility: visible; }
+  .task-move { font-size: 11px; color: #888; padding: 0 3px; cursor: pointer; flex-shrink: 0; }
+  .task-move:hover { color: #2563eb; }
+  .task-del { font-size: 12px; color: #bbb; padding: 0 4px; cursor: pointer; flex-shrink: 0; }
+  .task-del:hover { color: #dc2626; }
+  .task-item[draggable="true"] { cursor: grab; }
+  .task-item.dragging { opacity: 0.4; }
+  .task-item.drag-over { border-top: 2px solid #2563eb; margin-top: 0; }
+  .task-status { font-size: 12px; margin-right: 4px; flex-shrink: 0; width: 14px; text-align: center; }
+  .task-status.pending { color: #bbb; }
+  .task-status.running { color: #2563eb; animation: task-pulse 1s infinite; }
+  .task-status.done { color: #16a34a; }
+  .task-status.failed { color: #dc2626; }
+  .task-status.skipped { color: #999; }
+  .task-status.cancelled { color: #d97706; }
+  @keyframes task-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .task-progress { margin: 6px 8px; display: none; }
+  .task-progress .progress-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+  .task-progress .progress-fill { height: 100%; background: #2563eb; border-radius: 3px; transition: width 0.3s; width: 0; }
+  .task-progress .progress-fill.has-failure { background: #dc2626; }
+  .task-progress .progress-fill.has-cancelled { background: #d97706; }
+  .task-progress .progress-text { font-size: 11px; color: #666; margin-top: 3px; display: block; }
+  .mini-progress { display: none; margin: 0 8px 2px 28px; align-items: center; gap: 6px; }
+  .mini-progress .mini-bar { flex: 1; height: 3px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+  .mini-progress .mini-fill { height: 100%; background: #2563eb; border-radius: 2px; transition: width 0.3s; width: 0; }
+  .mini-progress .mini-fill.has-failure { background: #dc2626; }
+  .mini-progress .mini-text { font-size: 10px; color: #999; white-space: nowrap; }
+
+  .btn { padding: 2px 6px; border: 1px solid #999; background: #fff; color: #333; border-radius: 3px; cursor: pointer; font-size: 12px; margin: 1px; white-space: nowrap; }
+  .btn:hover { background: #e8e8e8; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:disabled:hover { background: inherit; }
+  .btn.primary { border-color: #2563eb; color: #2563eb; }
+  .btn.primary:hover { background: #2563eb; color: #fff; }
+  .btn.danger { border-color: #dc2626; color: #dc2626; }
+  .btn.danger:hover { background: #dc2626; color: #fff; }
+  .btn-row { display: flex; flex-wrap: nowrap; margin: 8px 0; gap: 2px; }
+
+  .content { flex: 1; display: flex; flex-direction: column; }
+
+  .tab-bar { display: flex; background: #eee; border-bottom: 1px solid #ddd; min-height: 32px; overflow-x: auto; }
+  .tab { display: flex; align-items: center; padding: 6px 12px; font-size: 12px; color: #888; cursor: pointer; border-right: 1px solid #ddd; white-space: nowrap; }
+  .tab:hover { color: #333; }
+  .tab.active { color: #333; background: #fff; border-bottom: 2px solid #2563eb; }
+  .tab-close { margin-left: 8px; font-size: 14px; color: #888; cursor: pointer; line-height: 1; }
+  .tab-close:hover { color: #dc2626; }
+  .tab-panels { flex: 1; overflow: hidden; position: relative; }
+  .panel-toolbar { position: absolute; top: 6px; right: 10px; z-index: 10; display: flex; gap: 4px; }
+  .panel-toolbar .tbtn { padding: 1px 8px; font-size: 10px; color: #bbb; background: rgba(255,255,255,0.85); border: 1px solid #ddd; border-radius: 3px; cursor: pointer; }
+  .panel-toolbar .tbtn:hover { color: #2563eb; border-color: #2563eb; background: #fff; }
+  .panel-toolbar .tbtn.active { color: #2563eb; border-color: #2563eb; }
+  .panel-toolbar .tbtn.danger:hover { color: #dc2626; border-color: #dc2626; }
+  .hide-ts .ts, .hide-ts .server-prefix { display: none; }
+  .tab-panel { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: none; overflow-y: auto; background: #fff; padding: 10px; font-family: Consolas, 'Courier New', monospace; font-size: 13px; line-height: 1.5; }
+  .tab-panel.active { display: block; }
+  .tab-panel .line { white-space: pre-wrap; word-break: break-all; }
+  .tab-panel .cmd-input { background: #eef2ff; border-left: 3px solid #2563eb; padding: 4px 10px; margin: 8px 0 0 0; font-weight: bold; color: #1e40af; }
+  .tab-panel .output-block { background: #f8f8f8; border-left: 3px solid #d1d5db; padding: 6px 10px; margin: 0 0 4px 0; position: relative; }
+  .tab-panel .output-block .copy-out { position: absolute; right: 4px; top: 4px; display: none; padding: 0 6px; font-size: 10px; color: #888; background: #fff; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; line-height: 1.6; }
+  .tab-panel .output-block:hover .copy-out { display: inline-block; }
+  .tab-panel .output-block .copy-out:hover { color: #2563eb; border-color: #2563eb; }
+  .tab-panel .output-block .copy-out.copied { display: inline-block; color: #16a34a; border-color: #16a34a; }
+  .tab-panel .error { color: #dc2626; }
+  .tab-panel .info { color: #888; font-size: 12px; margin: 4px 0; }
+  .tab-panel .success { color: #16a34a; }
+  .tab-panel .warn { color: #d97706; }
+  .server-prefix { font-weight: bold; }
+  .tab-panel.log-panel { font-size: 12px; white-space: pre-wrap; }
+
+  .adhoc-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; white-space: nowrap; cursor: pointer; user-select: none; }
+  .adhoc-toggle input { margin: 0; }
+  .adhoc-toggle .countdown { color: #d97706; font-weight: bold; min-width: 20px; }
+
+  .sched-indicator { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #16a34a; font-weight: bold; margin-left: 8px; cursor: pointer; user-select: none; }
+  .sched-indicator .sched-dot { width: 8px; height: 8px; border-radius: 50%; background: #16a34a; animation: sched-pulse 1.5s ease-in-out infinite; }
+  @keyframes sched-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .sched-indicator .sched-stop { font-size: 10px; color: #dc2626; margin-left: 2px; cursor: pointer; }
+  .sched-indicator .sched-stop:hover { text-decoration: underline; }
+  .actions { background: #fff; border-top: 1px solid #ddd; padding: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .actions.locked input[type="text"], .actions.locked select, .actions.locked .btn:not(.unlock-exempt) { opacity: 0.4; pointer-events: none; }
+  .actions.locked input[type="file"] { pointer-events: none; }
+  .actions input[type="text"] { flex: 1; min-width: 200px; padding: 6px 10px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; }
+  .actions input[type="text"]::placeholder { color: #ccc; }
+  .actions input[type="text"].warn { border-color: #d97706; background: #fffbeb; }
+  .actions input[type="text"]:focus { outline: none; border-color: #2563eb; }
+  .actions select { padding: 5px 6px; background: #fff; border: 1px solid #bbb; color: #888; border-radius: 3px; font-size: 12px; max-width: 180px; }
+  .actions select:focus { outline: none; border-color: #2563eb; }
+
+  .upload-row { display: flex; gap: 8px; align-items: center; width: 100%; margin-top: 6px; }
+  .upload-row input[type="file"] { display: none; }
+  .upload-row input[type="text"] { width: 250px; padding: 5px 8px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-size: 12px; }
+  .upload-row input[type="text"]::placeholder { color: #ccc; }
+  .upload-row select { padding: 4px 6px; background: #fff; border: 1px solid #bbb; color: #888; border-radius: 3px; font-size: 11px; max-width: 200px; }
+
+  .file-list { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; margin-top: 4px; }
+  .file-tag { display: inline-flex; align-items: center; gap: 4px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; padding: 2px 6px; font-size: 11px; color: #555; }
+  .file-tag .file-rm { cursor: pointer; color: #bbb; font-size: 13px; line-height: 1; }
+  .file-tag .file-rm:hover { color: #dc2626; }
+  .exec-label { font-size: 11px; color: #888; display: flex; align-items: center; gap: 3px; white-space: nowrap; cursor: pointer; user-select: none; }
+  .exec-label input { margin: 0; }
+
+  .modal-field { margin-bottom: 12px; }
+  .modal-field label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
+  .modal-field input[type="text"] { width: 100%; padding: 6px 10px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; }
+  .modal-field input[type="text"]::placeholder { color: #ccc; }
+  .modal-field input[type="text"]:focus { outline: none; border-color: #2563eb; }
+  .type-toggle { display: flex; gap: 0; margin-bottom: 14px; }
+  .type-toggle button { flex: 1; padding: 6px 0; border: 1px solid #bbb; background: #fff; color: #888; font-size: 12px; cursor: pointer; }
+  .type-toggle button:first-child { border-radius: 3px 0 0 3px; }
+  .type-toggle button:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+  .type-toggle button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .modal-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; margin-bottom: 12px; cursor: pointer; user-select: none; }
+  .modal-check input { margin: 0; }
+
+  .server-del { font-size: 12px; color: #bbb; margin-left: 4px; padding: 0 4px; cursor: pointer; flex-shrink: 0; visibility: hidden; }
+  .server-item:hover .server-del { visibility: visible; color: #888; }
+  .server-del:hover { color: #dc2626; }
+  .server-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .log-btn { font-size: 10px; color: #888; margin-left: auto; padding: 2px 6px; border: 1px solid #999; border-radius: 3px; background: none; cursor: pointer; flex-shrink: 0; }
+  .log-btn:hover { color: #2563eb; border-color: #2563eb; }
+  .list-scroll { max-height: 45vh; overflow-y: auto; }
+  .filter-input { width: 100%; padding: 4px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px; margin-bottom: 4px; }
+  .filter-input:focus { outline: none; border-color: #2563eb; }
+  .section-count { font-size: 11px; color: #aaa; font-weight: normal; margin-left: 4px; }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); z-index: 1000; justify-content: center; align-items: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; min-width: 360px; max-width: 800px; width: 50vw; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+  .modal.wide { max-width: 95vw; width: 85vw; height: 85vh; padding: 12px 16px; display: flex; flex-direction: column; }
+  .modal.wide .modal-title { margin-bottom: 6px; }
+  .modal.wide .modal-body { flex: 1; overflow: hidden; margin-bottom: 8px; display: flex; flex-direction: column; }
+  .modal.wide .modal-actions { margin-top: 0; }
+  .modal-body pre { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px; font-family: Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.6; overflow: auto; max-height: 75vh; white-space: pre; tab-size: 2; }
+  .modal-title { font-size: 14px; color: #2563eb; margin-bottom: 12px; }
+  .modal-body { font-size: 13px; color: #333; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap; word-break: break-all; }
+  .modal-body code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; color: #92700a; font-family: Consolas, monospace; font-size: 12px; }
+  .modal-input { width: 100%; padding: 6px 10px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; margin-bottom: 16px; }
+  .modal-input::placeholder { color: #ccc; }
+  .modal-input:focus { outline: none; border-color: #2563eb; }
+  .modal-hint { font-size: 11px; color: #888; margin-top: -12px; margin-bottom: 12px; }
+  .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  .modal-btn { padding: 6px 16px; border: 1px solid #999; background: #fff; color: #333; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .modal-btn:hover { background: #e8e8e8; }
+  .modal-btn.primary { border-color: #2563eb; color: #2563eb; }
+  .modal-btn.primary:hover { background: #2563eb; color: #fff; }
+  .modal-btn.danger { border-color: #dc2626; color: #dc2626; }
+  .modal-btn.danger:hover { background: #dc2626; color: #fff; }
+
+  .file-count { font-size: 11px; color: #888; white-space: nowrap; }
+  .modal-error { font-size: 11px; color: #dc2626; margin-top: -8px; margin-bottom: 8px; display: none; }
+  .modal-field input.invalid { border-color: #dc2626; background: #fff5f5; }
+
+  .modal.wide .CodeMirror { height: 100%; font-size: 13px; border: 1px solid #e0e0e0; border-radius: 4px; }
+  .yaml-editor-wrap { margin-bottom: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+
+</style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>SSH Ops Tool</h1>
+  <div class="header-right">
+    <div class="config-bar">
+      <select id="configSelect" onchange="switchConfig()"></select>
+      <div class="config-menu-wrap">
+        <button class="config-menu-btn" onclick="toggleConfigMenu(event)" title="Config actions">&#8942;</button>
+        <div class="config-menu" id="configMenu">
+          <button class="config-menu-item" onclick="reloadConfig();closeConfigMenu()"><span class="mi">&#x21bb;</span>Reload</button>
+          <button class="config-menu-item" onclick="newConfigModal();closeConfigMenu()"><span class="mi">+</span>New</button>
+          <button class="config-menu-item" onclick="duplicateConfigModal();closeConfigMenu()"><span class="mi">&#x2398;</span>Duplicate</button>
+          <button class="config-menu-item" onclick="renameConfigModal();closeConfigMenu()"><span class="mi">&#x270e;</span>Rename</button>
+          <button class="config-menu-item" onclick="editConfigYaml();closeConfigMenu()"><span class="mi">&#x270e;</span>Edit YAML</button>
+          <button class="config-menu-item" onclick="downloadConfig();closeConfigMenu()"><span class="mi">&#x2913;</span>Download</button>
+          <button class="config-menu-item danger" onclick="deleteConfigModal();closeConfigMenu()"><span class="mi">&#x2716;</span>Delete</button>
+        </div>
+      </div>
+    </div>
+    <span class="status" id="wsStatus">Connecting...</span>
+  </div>
+</header>
+
+<div class="main">
+  <div class="panel">
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Servers <span class="section-count" id="serverCount"></span></span>
+      <div class="config-menu-wrap">
+        <button class="config-menu-btn" onclick="toggleServerMenu(event)" title="More actions">&#8942;</button>
+        <div class="config-menu" id="serverMenu">
+          <button class="config-menu-item" onclick="addServerModal();closeServerMenu()"><span class="mi">+</span>Add Server</button>
+          <button class="config-menu-item" onclick="proxySettingsModal();closeServerMenu()"><span class="mi">&#x1f512;</span>Proxy (PSMP)</button>
+          <button class="config-menu-item" onclick="copyHosts();closeServerMenu()"><span class="mi">&#x2398;</span>Copy Selected Hosts</button>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" onclick="connectSelected()">&#x26a1; Connect</button>
+      <button class="btn danger" onclick="disconnectSelected()">&#x2715; Disconnect</button>
+      <button class="btn" onclick="toggleAll()">&#x2611; Select All</button>
+    </div>
+    <input type="text" class="filter-input" id="serverFilter" placeholder="Filter servers..." oninput="filterServers()" style="display:none">
+    <div id="serverList" class="list-scroll"></div>
+
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Tasks <span class="section-count" id="taskCount"></span></span>
+      <div class="config-menu-wrap">
+        <button class="config-menu-btn" onclick="toggleTaskMenu(event)" title="More actions">&#8942;</button>
+        <div class="config-menu" id="taskMenu">
+          <button class="config-menu-item" onclick="addTaskModal();closeTaskMenu()"><span class="mi">+</span>Add Task</button>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" id="btnRun" onclick="runSelectedTasks()">&#x25b6; Run</button>
+      <button class="btn danger" id="btnCancel" onclick="cancelTasks()" style="display:none">&#x25a0; Cancel</button>
+      <button class="btn" onclick="toggleAllTasks()">&#x2611; Select All</button>
+      <button class="btn" onclick="viewTasksYaml()">{ } YAML</button>
+    </div>
+    <div id="taskList"></div>
+    <div class="task-progress" id="taskProgress">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <span class="progress-text" id="progressText"></span>
+    </div>
+  </div>
+  <div class="divider" id="divider"></div>
+  <div class="content">
+    <div class="tab-bar" id="tabBar">
+      <div class="tab active" data-tab="main" onclick="switchTab('main')">Output</div>
+    </div>
+    <div class="tab-panels" id="tabPanels">
+      <div class="panel-toolbar">
+        <button class="tbtn" onclick="toggleTimestamps(this)" title="Hide timestamps and prefixes">T</button>
+        <button class="tbtn" onclick="copyLines('output')" title="Copy all output">&#x2398; All</button>
+        <button class="tbtn danger" onclick="clearActivePanel()" title="Clear" id="clearPanelBtn">&#x2715; Clear</button>
+      </div>
+      <div class="tab-panel active" id="panel-main"></div>
+    </div>
+    <div class="actions locked" id="actionsPanel">
+      <label class="adhoc-toggle unlock-exempt" title="Enable ad-hoc command and file upload. Auto-locks after 60s of inactivity."><input type="checkbox" id="adhocToggle" class="unlock-exempt" onchange="toggleAdhoc(this.checked)">Ad-hoc <span class="countdown" id="adhocCountdown"></span></label>
+      <button class="btn unlock-exempt" onclick="openScheduleModal()" title="Schedule periodic command" style="font-size:11px;padding:2px 7px">&#x23F0; Schedule</button>
+      <span id="schedIndicator" class="sched-indicator" style="display:none" onclick="openScheduleModal()"><span class="sched-dot"></span><span id="schedLabel"></span><span class="sched-stop" onclick="event.stopPropagation();stopSchedule()" title="Stop">&times;</span></span>
+      <input type="text" id="cmdInput" placeholder="Enter command... (interactive commands like top/vim/less not allowed)" onkeydown="cmdInputKeydown(event)">
+      <select id="cmdHistory" onchange="pickCmdHistory()"><option value="">History</option></select>
+      <button class="btn" onclick="deleteCmdHistoryItem()" title="Delete selected history item" style="padding:3px 5px;font-size:10px;color:#bbb" id="cmdHistDelBtn">&#x2715;</button>
+      <button class="btn primary" onclick="runCommand()">&#x25b6; Run</button>
+      <button class="btn" onclick="addCmdToTasks()">+ Task</button>
+      <div class="upload-row">
+        <input type="file" id="fileInput" multiple>
+        <button class="btn" onclick="document.getElementById('fileInput').click()">&#x1f4ce; Files</button>
+        <span class="file-count" id="fileCount"></span>
+        <button class="btn" onclick="clearFileList()" id="fileClearBtn" style="display:none">&#x2715; Clear</button>
+        <input type="text" id="destInput" placeholder="Absolute file path: /opt/app/file.txt (multi-file: /opt/app/)">
+        <label class="exec-label" title="Set mode 0755 (executable)"><input type="checkbox" id="execCheck">exec</label>
+        <select id="uploadHistory" onchange="pickUploadHistory()"><option value="">History</option></select>
+        <button class="btn" onclick="deleteUploadHistoryItem()" title="Delete selected history item" style="padding:3px 5px;font-size:10px;color:#bbb" id="uplHistDelBtn">&#x2715;</button>
+        <button class="btn" onclick="uploadFiles()">&#x21e7; Upload</button>
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-body" id="modalBody"></div>
+    <input class="modal-input" id="modalInput" style="display:none">
+    <div class="modal-hint" id="modalHint" style="display:none"></div>
+    <div class="modal-buttons" id="modalButtons"></div>
+  </div>
+</div>
+
+<script>
+var activeTab = 'main';
+var logTimers = {};
+let ws;
+
+function timeStr() {
+  var d = new Date();
+  return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2)+':'+('0'+d.getSeconds()).slice(-2);
+}
+
+// --- File accumulator (supports cross-directory selection) ---
+var pendingFiles = [];
+
+document.getElementById('fileInput').addEventListener('change', function() {
+  for (var i = 0; i < this.files.length; i++) {
+    pendingFiles.push(this.files[i]);
+  }
+  this.value = '';
+  renderFileList();
+});
+
+function renderFileList() {
+  var list = document.getElementById('fileList');
+  var count = document.getElementById('fileCount');
+  var clearBtn = document.getElementById('fileClearBtn');
+  list.textContent = '';
+  count.textContent = pendingFiles.length ? pendingFiles.length + ' file' + (pendingFiles.length > 1 ? 's' : '') : '';
+  clearBtn.style.display = pendingFiles.length ? '' : 'none';
+  pendingFiles.forEach(function(f, idx) {
+    var tag = document.createElement('span');
+    tag.className = 'file-tag';
+    tag.textContent = f.name;
+    var rm = document.createElement('span');
+    rm.className = 'file-rm';
+    rm.textContent = '\u00d7';
+    rm.title = 'Remove';
+    rm.addEventListener('click', function() {
+      pendingFiles.splice(idx, 1);
+      renderFileList();
+    });
+    tag.appendChild(rm);
+    list.appendChild(tag);
+  });
+}
+
+// --- Command input: warn on modifying commands ---
+document.getElementById('cmdInput').addEventListener('input', function() {
+  var cmd = this.value.trim();
+  this.classList.toggle('warn', cmd && isModifyingCmd(cmd));
+});
+
+function clearFileList() {
+  pendingFiles = [];
+  renderFileList();
+}
+
+// --- Modal dialogs ---
+var _modalResolve = null;
+
+function _showModal(title, bodyHtml, buttons, inputOpts) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  var inp = document.getElementById('modalInput');
+  var hint = document.getElementById('modalHint');
+  if (inputOpts) {
+    inp.style.display = '';
+    inp.value = inputOpts.value || '';
+    inp.placeholder = inputOpts.placeholder || '';
+    if (inputOpts.hint) { hint.style.display = ''; hint.textContent = inputOpts.hint; }
+    else { hint.style.display = 'none'; }
+    setTimeout(function() { inp.focus(); inp.select(); }, 50);
+  } else {
+    inp.style.display = 'none';
+    hint.style.display = 'none';
+  }
+  var btnContainer = document.getElementById('modalButtons');
+  btnContainer.textContent = '';
+  buttons.forEach(function(b) {
+    var btn = document.createElement('button');
+    btn.className = 'modal-btn' + (b.cls ? ' ' + b.cls : '');
+    btn.textContent = b.text;
+    btn.addEventListener('click', function() { if (!b.noAutoClose) _closeModal(); b.action(); });
+    btnContainer.appendChild(btn);
+  });
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function _closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+  document.querySelector('.modal').classList.remove('wide');
+}
+
+function modalConfirm(title, bodyHtml) {
+  return new Promise(function(resolve) {
+    _modalResolve = resolve;
+    _showModal(title, bodyHtml, [
+      { text: 'Cancel', action: function() { _modalResolve = null; resolve(false); } },
+      { text: 'Confirm', cls: 'primary', action: function() { _modalResolve = null; resolve(true); } }
+    ]);
+  });
+}
+
+function modalPrompt(title, bodyHtml, defaultVal, hint) {
+  return new Promise(function(resolve) {
+    _modalResolve = resolve;
+    _showModal(title, bodyHtml, [
+      { text: 'Cancel', action: function() { _modalResolve = null; resolve(null); } },
+      { text: 'OK', cls: 'primary', action: function() { _modalResolve = null; resolve(document.getElementById('modalInput').value); } }
+    ], { value: defaultVal || '', hint: hint || '' });
+    document.getElementById('modalInput').addEventListener('keydown', function handler(e) {
+      if (e.key === 'Enter') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(e.target.value); }
+      if (e.key === 'Escape') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(null); }
+    });
+  });
+}
+
+// Close modal on overlay click
+document.getElementById('modalOverlay').addEventListener('click', function(e) {
+  if (e.target === this) { _closeModal(); if (_modalResolve) { _modalResolve(false); _modalResolve = null; } }
+});
+
+// --- Tab management ---
+function switchTab(id) {
+  activeTab = id;
+  document.querySelectorAll('.tab').forEach(function(t) {
+    t.classList.toggle('active', t.dataset.tab === id);
+  });
+  document.querySelectorAll('.tab-panel').forEach(function(p) {
+    p.classList.toggle('active', p.id === 'panel-' + id);
+  });
+  var clearBtn = document.getElementById('clearPanelBtn');
+  if (clearBtn) clearBtn.style.display = (id === 'main') ? '' : 'none';
+}
+
+function openLogTab(serverName) {
+  var tabId = 'log-' + serverName;
+  if (document.getElementById('panel-' + tabId)) {
+    switchTab(tabId);
+    refreshLogTab(serverName);
+    return;
+  }
+  var tab = document.createElement('div');
+  tab.className = 'tab';
+  tab.dataset.tab = tabId;
+  var label = document.createTextNode(serverName);
+  tab.appendChild(label);
+  tab.addEventListener('click', function() { switchTab(tabId); });
+  var close = document.createElement('span');
+  close.className = 'tab-close';
+  close.textContent = '\u00d7';
+  close.addEventListener('click', function(e) {
+    e.stopPropagation();
+    closeLogTab(serverName);
+  });
+  tab.appendChild(close);
+  document.getElementById('tabBar').appendChild(tab);
+
+  var panel = document.createElement('div');
+  panel.className = 'tab-panel log-panel';
+  panel.id = 'panel-' + tabId;
+  document.getElementById('tabPanels').appendChild(panel);
+
+  switchTab(tabId);
+  refreshLogTab(serverName);
+  logTimers[serverName] = setInterval(function() { refreshLogTab(serverName); }, 3000);
+}
+
+function closeAllTabs() {
+  // Close all tabs except Output
+  document.querySelectorAll('.tab').forEach(function(t) {
+    if (t.dataset.tab !== 'main') t.remove();
+  });
+  document.querySelectorAll('.tab-panel').forEach(function(p) {
+    if (p.id !== 'panel-main') p.remove();
+  });
+  Object.keys(logTimers).forEach(function(k) {
+    clearInterval(logTimers[k]);
+    delete logTimers[k];
+  });
+  switchTab('main');
+}
+
+function closeLogTab(serverName) {
+  var tabId = 'log-' + serverName;
+  var tab = document.querySelector('.tab[data-tab="' + tabId + '"]');
+  var panel = document.getElementById('panel-' + tabId);
+  if (tab) tab.remove();
+  if (panel) panel.remove();
+  if (logTimers[serverName]) {
+    clearInterval(logTimers[serverName]);
+    delete logTimers[serverName];
+  }
+  if (activeTab === tabId) switchTab('main');
+}
+
+function colorizeLogLine(line) {
+  if (/failed|\[ERROR\]|FAILED/i.test(line)) return 'error';
+  if (/\[WARN\]/i.test(line)) return 'warn';
+  if (/=> OK|Connected|Uploaded/i.test(line)) return 'success';
+  if (/^===/.test(line) || /\] \$ /.test(line)) return 'info';
+  return '';
+}
+
+async function refreshLogTab(serverName) {
+  var panel = document.getElementById('panel-log-' + serverName);
+  if (!panel) return;
+  var res = await fetch('/api/logs/' + encodeURIComponent(serverName));
+  var text = await res.text();
+  var atBottom = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 20;
+  panel.innerHTML = '';
+  var lines = text.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (!line && i === lines.length - 1) continue;
+    var div = document.createElement('div');
+    div.className = 'line';
+    var cls = colorizeLogLine(line);
+    if (cls) div.classList.add(cls);
+    // Wrap leading [HH:MM:SS] timestamp in <span class="ts">
+    var tsMatch = line.match(/^(\[\d{2}:\d{2}:\d{2}\]\s*)/);
+    if (tsMatch) {
+      var tsSpan = document.createElement('span');
+      tsSpan.className = 'ts';
+      tsSpan.textContent = tsMatch[1];
+      div.appendChild(tsSpan);
+      var rest = line.slice(tsMatch[1].length);
+      var ansiFrag = ansiToHtml(rest);
+      if (ansiFrag) div.appendChild(ansiFrag);
+      else div.appendChild(document.createTextNode(rest));
+    } else {
+      var ansiFrag = ansiToHtml(line);
+      if (ansiFrag) div.appendChild(ansiFrag);
+      else div.textContent = line;
+    }
+    panel.appendChild(div);
+  }
+  if (atBottom) panel.scrollTop = panel.scrollHeight;
+}
+
+// --- ANSI color code parser ---
+var _ANSI_COLORS = {
+  '30': '#000', '31': '#dc2626', '32': '#16a34a', '33': '#d97706',
+  '34': '#2563eb', '35': '#9333ea', '36': '#0891b2', '37': '#888',
+  '90': '#666', '91': '#ef4444', '92': '#22c55e', '93': '#eab308',
+  '94': '#3b82f6', '95': '#a855f7', '96': '#06b6d4', '97': '#ccc'
+};
+var _ANSI_BG = {
+  '40': '#000', '41': '#dc2626', '42': '#16a34a', '43': '#d97706',
+  '44': '#2563eb', '45': '#9333ea', '46': '#0891b2', '47': '#e5e5e5',
+  '100': '#666', '101': '#ef4444', '102': '#22c55e', '103': '#eab308',
+  '104': '#3b82f6', '105': '#a855f7', '106': '#06b6d4', '107': '#fff'
+};
+
+function ansiToHtml(text) {
+  if (text.indexOf('\x1b') === -1) return null;
+  var parts = text.split(/\x1b\[([0-9;]*)m/);
+  if (parts.length <= 1) return null;
+  var frag = document.createDocumentFragment();
+  var fg = '', bg = '', bold = false, underline = false;
+  for (var i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      if (parts[i]) {
+        var span = document.createElement('span');
+        var style = '';
+        if (fg) style += 'color:' + fg + ';';
+        if (bg) style += 'background:' + bg + ';';
+        if (bold) style += 'font-weight:bold;';
+        if (underline) style += 'text-decoration:underline;';
+        if (style) span.style.cssText = style;
+        span.textContent = parts[i];
+        frag.appendChild(span);
+      }
+    } else {
+      var codes = parts[i].split(';');
+      for (var j = 0; j < codes.length; j++) {
+        var c = codes[j];
+        if (c === '0' || c === '') { fg = ''; bg = ''; bold = false; underline = false; }
+        else if (c === '1') bold = true;
+        else if (c === '4') underline = true;
+        else if (_ANSI_COLORS[c]) fg = _ANSI_COLORS[c];
+        else if (_ANSI_BG[c]) bg = _ANSI_BG[c];
+      }
+    }
+  }
+  return frag;
+}
+
+// --- Timestamp toggle ---
+function toggleTimestamps(btn) {
+  var panels = document.getElementById('tabPanels');
+  panels.classList.toggle('hide-ts');
+  btn.classList.toggle('active');
+  var hidden = panels.classList.contains('hide-ts');
+  btn.title = hidden ? 'Show timestamps' : 'Hide timestamps and prefixes';
+  try { localStorage.setItem('ssh-ops-hide-ts', hidden ? '1' : ''); } catch(e) {}
+}
+
+// --- Copy lines by category ---
+function copyLines(type) {
+  var panel = document.querySelector('.tab-panel.active');
+  if (!panel) return;
+  var result = [];
+  // Collect all out-line elements inside output-blocks
+  panel.querySelectorAll('.output-block .out-line').forEach(function(el) {
+    result.push(_lineText(el));
+  });
+  if (!result.length) {
+    appendLine('[WARN] Nothing to copy');
+    return;
+  }
+  navigator.clipboard.writeText(result.join('\n')).then(function() {
+    appendLine('Copied ' + result.length + ' line(s) to clipboard');
+  });
+}
+
+function _lineText(line) {
+  // Copy what's visible: skip hidden elements (.copy-out always, .ts/.server-prefix only when hide-ts active)
+  var hideTs = document.getElementById('tabPanels').classList.contains('hide-ts');
+  var parts = [];
+  for (var i = 0; i < line.childNodes.length; i++) {
+    var node = line.childNodes[i];
+    if (node.nodeType === 3) { parts.push(node.textContent); continue; }
+    if (node.classList && node.classList.contains('copy-out')) continue;
+    if (hideTs && node.classList && (node.classList.contains('ts') || node.classList.contains('server-prefix'))) continue;
+    parts.push(node.textContent);
+  }
+  return parts.join('');
+}
+
+
+// --- Terminal output (main tab) ---
+var _currentOutputBlock = null;
+
+function _classifyLine(text) {
+  if (text.includes('[ERROR]') || text.includes('FAILED') || /^✗/.test(text)) return 'error';
+  if (text.includes('[WARN]')) return 'warn';
+  if (/^✓/.test(text)) return 'success';
+  if (text.startsWith('──') || /^\[[^\]]+\]\s*\$\s/.test(text)) return 'cmd-input';
+  if (text.startsWith('[Schedule]') || text.startsWith('[Done]')) return 'info';
+  // Only lines with [servername] prefix (and not $ commands) are output
+  if (/^\[[^\]]+\]\s/.test(text) && !text.includes('[ERROR]') && !text.includes('[WARN]')) return 'output';
+  return 'info';
+}
+
+function appendLine(text) {
+  var panel = document.getElementById('panel-main');
+  var cls = _classifyLine(text);
+
+  // Non-output line → close current output block
+  if (cls !== 'output' && _currentOutputBlock) {
+    _currentOutputBlock = null;
+  }
+
+  if (cls === 'output') {
+    // Start new output block if needed
+    if (!_currentOutputBlock) {
+      _currentOutputBlock = document.createElement('div');
+      _currentOutputBlock.className = 'line output-block';
+      var copyBtn = document.createElement('span');
+      copyBtn.className = 'copy-out';
+      copyBtn.textContent = '\u2398';
+      copyBtn.onclick = function(e) {
+        e.stopPropagation();
+        var block = copyBtn.parentElement;
+        var lines = [];
+        block.querySelectorAll('.out-line').forEach(function(el) { lines.push(_lineText(el)); });
+        navigator.clipboard.writeText(lines.join('\n')).then(function() {
+          copyBtn.textContent = '\u2713';
+          copyBtn.classList.add('copied');
+          setTimeout(function() { copyBtn.textContent = '\u2398'; copyBtn.classList.remove('copied'); }, 2000);
+        });
+      };
+      _currentOutputBlock.appendChild(copyBtn);
+      panel.appendChild(_currentOutputBlock);
+    }
+    // Add line inside output block
+    var outLine = document.createElement('div');
+    outLine.className = 'out-line';
+    _buildLineContent(outLine, text);
+    _currentOutputBlock.appendChild(outLine);
+  } else {
+    var div = document.createElement('div');
+    div.className = 'line ' + cls;
+    _buildLineContent(div, text);
+    panel.appendChild(div);
+  }
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function _buildLineContent(div, text) {
+  var tsSpan = document.createElement('span');
+  tsSpan.className = 'ts';
+  tsSpan.textContent = '[' + timeStr() + '] ';
+  var m = text.match(/^\[([^\]]+)\]\s*/);
+  if (m && !text.includes('[ERROR]') && !text.includes('[WARN]')) {
+    var serverName = m[1];
+    var rest = text.slice(m[0].length);
+    div.appendChild(tsSpan);
+    var prefix = document.createElement('span');
+    prefix.className = 'server-prefix';
+    prefix.textContent = '[' + serverName + '] ';
+    div.appendChild(prefix);
+    var ansiFrag = ansiToHtml(rest);
+    if (ansiFrag) div.appendChild(ansiFrag);
+    else div.appendChild(document.createTextNode(rest));
+  } else {
+    div.appendChild(tsSpan);
+    var ansiFrag2 = ansiToHtml(text);
+    if (ansiFrag2) div.appendChild(ansiFrag2);
+    else div.appendChild(document.createTextNode(text));
+  }
+}
+
+async function clearActivePanel() {
+  document.getElementById('panel-main').textContent = '';
+  await fetch('/api/clear-history', { method: 'POST' });
+}
+
+// --- WebSocket ---
+function connectWS() {
+  var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host + '/ws');
+  ws.onopen = function() { document.getElementById('wsStatus').textContent = 'Connected'; };
+  ws.onclose = function() {
+    document.getElementById('wsStatus').textContent = 'Disconnected';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = function(e) {
+    var d = e.data;
+    if (d.charAt(0) === '{') {
+      try { var msg = JSON.parse(d); if (msg.type === 'progress') { updateTaskProgress(msg); return; } } catch(_) {}
+    }
+    appendLine(d);
+  };
+}
+
+// --- API helpers ---
+async function api(url, body) {
+  var res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+// --- Config management ---
+async function loadConfigs() {
+  var res = await fetch('/api/configs');
+  var data = await res.json();
+  var select = document.getElementById('configSelect');
+  select.textContent = '';
+  data.configs.forEach(function(c) {
+    var opt = document.createElement('option');
+    opt.value = c.path;
+    opt.textContent = c.name;
+    if (c.path === data.current) opt.selected = true;
+    select.appendChild(opt);
+  });
+  if (typeof _loadSchedConfig === 'function') _loadSchedConfig();
+}
+
+async function switchConfig() {
+  var path = document.getElementById('configSelect').value;
+  if (!path) return;
+  var name = document.getElementById('configSelect').selectedOptions[0].textContent;
+  var ok = await modalConfirm('Switch Config', 'Switch to <code>' + name + '</code>?\n\nAll connections will be disconnected.');
+  if (!ok) { loadConfigs(); return; }
+  var result = await api('/api/switch-config', { path: path });
+  if (result.error) {
+    appendLine('[ERROR] Switch config failed: ' + result.error);
+    loadConfigs();
+  } else {
+    closeAllTabs();
+    document.getElementById('panel-main').textContent = '';
+    loadServers();
+    loadTasks();
+    stopSchedule();
+    _loadSchedConfig();
+    appendLine('Switched to config: ' + name);
+  }
+}
+
+function _closeAllMenus() {
+  document.querySelectorAll('.config-menu.show').forEach(function(m) { m.classList.remove('show'); });
+}
+function _toggleMenu(id, e) {
+  e.stopPropagation();
+  var menu = document.getElementById(id);
+  var wasOpen = menu.classList.contains('show');
+  _closeAllMenus();
+  if (!wasOpen) menu.classList.add('show');
+}
+function toggleConfigMenu(e) { _toggleMenu('configMenu', e); }
+function closeConfigMenu() { document.getElementById('configMenu').classList.remove('show'); }
+function toggleServerMenu(e) { _toggleMenu('serverMenu', e); }
+function closeServerMenu() { document.getElementById('serverMenu').classList.remove('show'); }
+function toggleTaskMenu(e) { _toggleMenu('taskMenu', e); }
+function closeTaskMenu() { document.getElementById('taskMenu').classList.remove('show'); }
+document.addEventListener('click', function() { _closeAllMenus(); });
+
+function downloadConfig() {
+  window.open('/api/download-config', '_blank');
+}
+
+async function reloadConfig() {
+  var ok = await modalConfirm('Reload Config', 'Reload current config?\n\nAll connections will be disconnected.');
+  if (!ok) return;
+  var result = await api('/api/reload', {});
+  if (result.error) {
+    appendLine('[ERROR] Reload failed: ' + result.error);
+  } else {
+    closeAllTabs();
+    loadServers();
+    loadTasks();
+  }
+}
+
+// --- Load data ---
+async function loadServers() {
+  var res = await fetch('/api/servers');
+  var servers = await res.json();
+  var list = document.getElementById('serverList');
+  list.textContent = '';
+  // Update count badge
+  var countEl = document.getElementById('serverCount');
+  if (countEl) countEl.textContent = '(' + servers.length + ')';
+  setTimeout(updateServerCount, 0);
+  // Show filter input when 6+ servers
+  var filterEl = document.getElementById('serverFilter');
+  if (filterEl) filterEl.style.display = servers.length >= 8 ? '' : 'none';
+
+  servers.forEach(function(s, idx) {
+    var div = document.createElement('div');
+    div.className = 'server-item';
+    div.dataset.name = (s.name || '').toLowerCase();
+    div.dataset.host = (s.host || '').toLowerCase();
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = s.name;
+    cb.className = 'server-cb';
+    cb.addEventListener('change', updateServerCount);
+    if (s.connected) cb.checked = true;
+
+    var dot = document.createElement('span');
+    dot.className = 'dot' + (s.connected ? ' connected' : '');
+
+    var label = document.createElement('span');
+    label.className = 'server-label';
+    label.textContent = s.name;
+    if (s.name !== s.host) div.title = s.host + ':' + s.port + ' (' + s.username + ') — double-click to change password';
+    else div.title = 'Double-click to change password';
+    label.addEventListener('dblclick', function(e) { e.stopPropagation(); editServerPassword(idx, s.name); });
+
+    var logBtn = document.createElement('button');
+    logBtn.className = 'log-btn';
+    logBtn.textContent = 'Log';
+    logBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      openLogTab(s.name);
+    });
+
+    var del = document.createElement('span');
+    del.className = 'server-del';
+    del.textContent = '\u00d7';
+    del.title = 'Remove from config';
+    del.addEventListener('click', function(e) { e.stopPropagation(); deleteServer(idx, s.name); });
+
+    div.appendChild(cb);
+    div.appendChild(dot);
+    div.appendChild(label);
+    div.appendChild(logBtn);
+    div.appendChild(del);
+    list.appendChild(div);
+    // Mini progress bar for per-server task progress
+    var mp = document.createElement('div');
+    mp.className = 'mini-progress';
+    mp.id = 'serverProgress_' + s.name;
+    mp.innerHTML = '<div class="mini-bar"><div class="mini-fill"></div></div><span class="mini-text"></span>';
+    list.appendChild(mp);
+  });
+}
+
+function updateServerCount() {
+  var total = document.querySelectorAll('.server-cb').length;
+  var selected = document.querySelectorAll('.server-cb:checked').length;
+  var el = document.getElementById('serverCount');
+  if (el) el.textContent = selected > 0 ? '(' + selected + '/' + total + ')' : '(' + total + ')';
+}
+
+function filterServers() {
+  var q = (document.getElementById('serverFilter').value || '').toLowerCase();
+  var items = document.querySelectorAll('#serverList .server-item');
+  items.forEach(function(item) {
+    var match = !q || item.dataset.name.indexOf(q) >= 0 || item.dataset.host.indexOf(q) >= 0;
+    item.style.display = match ? '' : 'none';
+  });
+}
+
+var TASK_ICONS = { command: '$', upload: '\u2191', script: '\u2699' };
+var _cachedTasks = [];
+var _dragFromIdx = null;
+
+async function loadTasks() {
+  var res = await fetch('/api/tasks');
+  var tasks = await res.json();
+  _cachedTasks = tasks;
+  var list = document.getElementById('taskList');
+  list.textContent = '';
+  // Hide progress bar when tasks are reloaded (config switch etc.)
+  var pg = document.getElementById('taskProgress'); if (pg) pg.style.display = 'none';
+  tasks.forEach(function(t) {
+    var div = document.createElement('div');
+    div.className = 'task-item';
+    div.draggable = true;
+    div.dataset.idx = t.index;
+    div.addEventListener('dragstart', function(e) {
+      _dragFromIdx = t.index;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', '');
+      setTimeout(function() { div.classList.add('dragging'); }, 0);
+    });
+    div.addEventListener('dragend', function() {
+      div.classList.remove('dragging');
+      _dragFromIdx = null;
+      list.querySelectorAll('.task-item').forEach(function(el) { el.classList.remove('drag-over'); });
+    });
+    div.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      list.querySelectorAll('.task-item').forEach(function(el) { el.classList.remove('drag-over'); });
+      if (_dragFromIdx !== null && _dragFromIdx !== t.index) div.classList.add('drag-over');
+    });
+    div.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (_dragFromIdx !== null && _dragFromIdx !== t.index) {
+        reorderTaskDrag(_dragFromIdx, t.index);
+      }
+      _dragFromIdx = null;
+    });
+    var fullDetail = t.command || (t.src ? t.src + ' \u2192 ' + t.dest : t.name);
+    var shortDetail = t.command || (t.src ? t.src.split(/[\/\\]/).pop() + ' \u2192 ' + t.dest : t.name);
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = t.name;
+    cb.className = 'task-cb';
+    cb.addEventListener('change', updateTaskCount);
+    var statusSpan = document.createElement('span');
+    statusSpan.className = 'task-status';
+    statusSpan.id = 'taskStatus_' + t.name;
+    var icon = document.createElement('span');
+    icon.className = 'task-icon';
+    icon.textContent = TASK_ICONS[t.type] || '?';
+    icon.title = t.type;
+
+    var detailSpan = document.createElement('span');
+    detailSpan.className = 'task-detail';
+    detailSpan.textContent = shortDetail;
+
+    var actions = document.createElement('span');
+    actions.className = 'task-actions';
+
+    var up = document.createElement('span');
+    up.className = 'task-move';
+    up.textContent = '\u25b2';
+    up.title = 'Move up';
+    up.addEventListener('click', function(e) { e.stopPropagation(); reorderTask(t.index, 'up'); });
+
+    var down = document.createElement('span');
+    down.className = 'task-move';
+    down.textContent = '\u25bc';
+    down.title = 'Move down';
+    down.addEventListener('click', function(e) { e.stopPropagation(); reorderTask(t.index, 'down'); });
+
+    var del = document.createElement('span');
+    del.className = 'task-del';
+    del.textContent = '\u00d7';
+    del.title = 'Remove from config';
+    del.addEventListener('click', function(e) { e.stopPropagation(); deleteTask(t.index, shortDetail); });
+
+    actions.appendChild(up);
+    actions.appendChild(down);
+    actions.appendChild(del);
+
+    div.appendChild(cb);
+    div.appendChild(statusSpan);
+    div.appendChild(icon);
+    div.appendChild(detailSpan);
+    if (t.modifying) {
+      var warn = document.createElement('span');
+      warn.className = 'task-modify';
+      warn.textContent = '\u26a0';
+      warn.title = 'This command modifies the system';
+      div.appendChild(warn);
+    }
+    div.appendChild(actions);
+    div.title = fullDetail;
+    list.appendChild(div);
+    // Mini progress bar for per-task server progress
+    var mp = document.createElement('div');
+    mp.className = 'mini-progress';
+    mp.id = 'taskMiniProgress_' + t.name;
+    mp.innerHTML = '<div class="mini-bar"><div class="mini-fill"></div></div><span class="mini-text"></span>';
+    list.appendChild(mp);
+  });
+  setTimeout(updateTaskCount, 0);
+}
+
+function updateTaskCount() {
+  var total = document.querySelectorAll('.task-cb').length;
+  var selected = document.querySelectorAll('.task-cb:checked').length;
+  var el = document.getElementById('taskCount');
+  if (el) el.textContent = selected > 0 ? '(' + selected + '/' + total + ')' : '(' + total + ')';
+}
+
+var _STATUS_ICONS = { pending: '\u25cb', running: '\u25ce', done: '\u2713', failed: '\u2717', skipped: '\u2013', cancelled: '\u2298' };
+function updateTaskProgress(data) {
+  var servers = data.servers || {};
+  var serverNames = data.server_names || [];
+  var taskNames = data.task_names || [];
+  var progressDiv = document.getElementById('taskProgress');
+  var fillEl = document.getElementById('progressFill');
+  var textEl = document.getElementById('progressText');
+
+  // Toggle Run/Cancel buttons
+  var btnRun = document.getElementById('btnRun');
+  var btnCancel = document.getElementById('btnCancel');
+  if (btnRun) btnRun.style.display = data.running ? 'none' : '';
+  if (btnCancel) {
+    btnCancel.style.display = data.running ? '' : 'none';
+    if (data.cancelling) { btnCancel.disabled = true; btnCancel.textContent = '⏳ Cancelling...'; }
+    else if (!data.running) { btnCancel.disabled = false; btnCancel.innerHTML = '&#x25a0; Cancel'; }
+  }
+
+  var totalAll = serverNames.length * taskNames.length;
+  var doneAll = 0, failAll = 0, cancelledAll = 0;
+
+  // --- Per-task status icon: show aggregate across servers ---
+  taskNames.forEach(function(tname) {
+    var tDone = 0, tFail = 0, tRunning = false, tCancelled = 0;
+    serverNames.forEach(function(sname) {
+      var info = (servers[sname] || {})[tname];
+      if (!info) return;
+      if (info.status === 'done') { tDone++; doneAll++; if (!info.success) { tFail++; failAll++; } }
+      if (info.status === 'cancelled') { tCancelled++; cancelledAll++; }
+      if (info.status === 'running') tRunning = true;
+    });
+    // Task status icon: show worst/current state
+    var el = document.getElementById('taskStatus_' + tname);
+    if (el) {
+      var finished = tDone + tCancelled;
+      var st = tCancelled === serverNames.length ? 'cancelled' : tFail > 0 ? 'failed' : tRunning ? 'running' : tDone === serverNames.length ? 'done' : tDone > 0 ? 'running' : tCancelled > 0 ? 'cancelled' : 'pending';
+      el.textContent = _STATUS_ICONS[st] || '';
+      el.className = 'task-status ' + st;
+    }
+    // Per-task mini progress bar (task across servers)
+    var mp = document.getElementById('taskMiniProgress_' + tname);
+    if (mp) {
+      mp.style.display = (data.running || tDone > 0 || tCancelled > 0) ? 'flex' : 'none';
+      var pct = serverNames.length > 0 ? Math.round((tDone / serverNames.length) * 100) : 0;
+      mp.querySelector('.mini-fill').style.width = pct + '%';
+      mp.querySelector('.mini-fill').className = 'mini-fill' + (tFail > 0 ? ' has-failure' : '');
+      var label = tDone + '/' + serverNames.length;
+      if (tFail > 0) label += ' (' + tFail + ' failed)';
+      if (tCancelled > 0) label += ' (' + tCancelled + ' cancelled)';
+      mp.querySelector('.mini-text').textContent = label;
+    }
+  });
+
+  // --- Per-server mini progress bar ---
+  serverNames.forEach(function(sname) {
+    var sDone = 0, sFail = 0, sCancelled = 0;
+    taskNames.forEach(function(tname) {
+      var info = (servers[sname] || {})[tname];
+      if (info && info.status === 'done') { sDone++; if (!info.success) sFail++; }
+      if (info && info.status === 'cancelled') sCancelled++;
+    });
+    var mp = document.getElementById('serverProgress_' + sname);
+    if (mp) {
+      mp.style.display = (data.running || sDone > 0 || sCancelled > 0) ? 'flex' : 'none';
+      var pct = taskNames.length > 0 ? Math.round((sDone / taskNames.length) * 100) : 0;
+      mp.querySelector('.mini-fill').style.width = pct + '%';
+      mp.querySelector('.mini-fill').className = 'mini-fill' + (sFail > 0 ? ' has-failure' : '');
+      var label = sDone + '/' + taskNames.length;
+      if (sFail > 0) label += ' (' + sFail + ' failed)';
+      if (sCancelled > 0) label += ' (' + sCancelled + ' cancelled)';
+      mp.querySelector('.mini-text').textContent = label;
+    }
+  });
+
+  // --- Overall progress bar ---
+  if (totalAll > 0) {
+    progressDiv.style.display = 'block';
+    var completedAll = doneAll + cancelledAll;
+    var pct = Math.round((completedAll / totalAll) * 100);
+    fillEl.style.width = pct + '%';
+    fillEl.className = 'progress-fill' + (failAll > 0 ? ' has-failure' : cancelledAll > 0 ? ' has-cancelled' : '');
+    var extra = '';
+    if (failAll > 0) extra += ', ' + failAll + ' failed';
+    if (cancelledAll > 0) extra += ', ' + cancelledAll + ' cancelled';
+    if (data.running) {
+      var cur = data.current_server || '';
+      if (data.cancelling) {
+        textEl.textContent = 'Cancelling — waiting for current task on ' + (cur || '...') + extra;
+      } else {
+        textEl.textContent = doneAll + '/' + totalAll + (cur ? ' — ' + cur : '') + extra;
+      }
+    } else {
+      textEl.textContent = doneAll + '/' + totalAll + ' completed' + extra;
+    }
+  } else if (!data.running) {
+    progressDiv.style.display = 'none';
+  }
+}
+
+// --- History ---
+async function loadCmdHistory() {
+  var res = await fetch('/api/cmd-history');
+  var items = await res.json();
+  var select = document.getElementById('cmdHistory');
+  select.textContent = '';
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'History (' + items.length + ')';
+  select.appendChild(placeholder);
+  for (var i = items.length - 1; i >= 0; i--) {
+    var opt = document.createElement('option');
+    opt.value = items[i];
+    opt.textContent = items[i].length > 40 ? items[i].substring(0, 40) + '...' : items[i];
+    opt.title = items[i];
+    select.appendChild(opt);
+  }
+  if (items.length) {
+    var clear = document.createElement('option');
+    clear.value = '__clear_all__';
+    clear.textContent = '\u2500\u2500 Clear All \u2500\u2500';
+    select.appendChild(clear);
+  }
+}
+
+async function deleteCmdHistoryItem() {
+  var select = document.getElementById('cmdHistory');
+  var val = select.value;
+  if (!val || val === '__clear_all__') {
+    await api('/api/delete-cmd-history', { all: true });
+  } else {
+    await api('/api/delete-cmd-history', { command: val });
+  }
+  select.selectedIndex = 0;
+  loadCmdHistory();
+}
+
+function pickCmdHistory() {
+  var select = document.getElementById('cmdHistory');
+  var val = select.value;
+  if (val === '__clear_all__') {
+    deleteCmdHistoryItem();
+    return;
+  }
+  if (val) {
+    document.getElementById('cmdInput').value = val;
+  }
+}
+
+var _histIdx = -1;
+var _histDraft = '';
+function cmdInputKeydown(e) {
+  if (e.key === 'Enter') { runCommand(); _histIdx = -1; return; }
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  var select = document.getElementById('cmdHistory');
+  var opts = [];
+  for (var i = 1; i < select.options.length; i++) {
+    var v = select.options[i].value;
+    if (v && v !== '__clear_all__') opts.push(v);
+  }
+  if (!opts.length) return;
+  if (_histIdx === -1) _histDraft = document.getElementById('cmdInput').value;
+  if (e.key === 'ArrowUp') {
+    _histIdx = Math.min(_histIdx + 1, opts.length - 1);
+  } else {
+    _histIdx--;
+  }
+  var input = document.getElementById('cmdInput');
+  if (_histIdx < 0) {
+    _histIdx = -1;
+    input.value = _histDraft;
+  } else {
+    input.value = opts[_histIdx];
+  }
+}
+
+async function loadUploadHistory() {
+  var res = await fetch('/api/upload-history');
+  var items = await res.json();
+  var select = document.getElementById('uploadHistory');
+  select.textContent = '';
+  var placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'History (' + items.length + ')';
+  select.appendChild(placeholder);
+  for (var i = items.length - 1; i >= 0; i--) {
+    var opt = document.createElement('option');
+    opt.value = JSON.stringify(items[i]);
+    opt.textContent = items[i].filename + ' \u2192 ' + items[i].dest;
+    opt.title = items[i].filename + ' -> ' + items[i].dest;
+    select.appendChild(opt);
+  }
+  if (items.length) {
+    var clear = document.createElement('option');
+    clear.value = '__clear_all__';
+    clear.textContent = '\u2500\u2500 Clear All \u2500\u2500';
+    select.appendChild(clear);
+  }
+}
+
+function pickUploadHistory() {
+  var select = document.getElementById('uploadHistory');
+  var val = select.value;
+  if (val === '__clear_all__') {
+    deleteUploadHistoryItem();
+    return;
+  }
+  if (val) {
+    try {
+      var item = JSON.parse(val);
+      document.getElementById('destInput').value = item.dest;
+    } catch(e) {
+      document.getElementById('destInput').value = val;
+    }
+  }
+}
+
+async function deleteUploadHistoryItem() {
+  var select = document.getElementById('uploadHistory');
+  var val = select.value;
+  if (!val || val === '__clear_all__') {
+    await api('/api/delete-upload-history', { all: true });
+  } else {
+    try {
+      var item = JSON.parse(val);
+      await api('/api/delete-upload-history', item);
+    } catch(e) {}
+  }
+  select.selectedIndex = 0;
+  loadUploadHistory();
+}
+
+// --- Actions ---
+function getSelectedServers() {
+  return Array.from(document.querySelectorAll('.server-cb:checked')).map(function(cb) { return cb.value; });
+}
+
+function toggleAll() {
+  var cbs = document.querySelectorAll('.server-cb');
+  var allChecked = Array.from(cbs).every(function(cb) { return cb.checked; });
+  cbs.forEach(function(cb) { cb.checked = !allChecked; });
+  updateServerCount();
+}
+
+async function copyHosts() {
+  var items = document.querySelectorAll('.server-cb:checked');
+  if (!items.length) { appendLine('[ERROR] No servers selected — check the servers you want to copy'); return; }
+  var hosts = Array.from(items).map(function(cb) {
+    var item = cb.closest('.server-item');
+    return item ? (item.dataset.host || cb.value) : cb.value;
+  });
+  if (!hosts.length) { appendLine('[ERROR] No servers to copy'); return; }
+  var text = hosts.join(',');
+  try {
+    await navigator.clipboard.writeText(text);
+    appendLine('Copied ' + hosts.length + ' host(s) to clipboard: ' + text);
+  } catch (e) {
+    // Fallback for non-HTTPS
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    appendLine('Copied ' + hosts.length + ' host(s) to clipboard: ' + text);
+  }
+}
+
+async function connectSelected() {
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+
+  // Check if any selected server needs OTP (PSMP proxy)
+  var res = await fetch('/api/servers');
+  var allServers = await res.json();
+  var needsOtp = allServers.some(function(s) { return names.indexOf(s.name) !== -1 && s.needs_otp; });
+
+  var otp = null;
+  if (needsOtp) {
+    otp = await modalPrompt('PSMP Authentication', 'Enter RSA OTP token:', '', 'One-time password from your RSA token');
+    if (!otp) return;  // user cancelled
+  }
+
+  appendLine('Connecting to ' + names.join(', ') + '...');
+  var body = { servers: names };
+  if (otp) body.otp = otp;
+  await api('/api/connect', body);
+  setTimeout(loadServers, 1000);
+}
+
+async function disconnectSelected() {
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+  var ok = await modalConfirm('Disconnect', 'Disconnect selected servers?<br><br><b>' + names.join(', ') + '</b>');
+  if (!ok) return;
+  appendLine('Disconnecting ' + names.join(', ') + '...');
+  var result = await api('/api/disconnect', { servers: names });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    appendLine('Disconnected ' + names.join(', '));
+  }
+  loadServers();
+}
+
+function getSelectedTasks() {
+  return Array.from(document.querySelectorAll('.task-cb:checked')).map(function(cb) { return cb.value; });
+}
+
+function toggleAllTasks() {
+  var cbs = document.querySelectorAll('.task-cb');
+  var allChecked = Array.from(cbs).every(function(cb) { return cb.checked; });
+  cbs.forEach(function(cb) { cb.checked = !allChecked; });
+  updateTaskCount();
+}
+
+async function reorderTask(index, direction) {
+  var result = await api('/api/reorder-task', { index: index, direction: direction });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    loadTasks();
+  }
+}
+
+async function reorderTaskDrag(fromIdx, toIdx) {
+  var result = await api('/api/reorder-task', { from_index: fromIdx, to_index: toIdx });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    loadTasks();
+  }
+}
+
+async function deleteTask(index, detail) {
+  var ok = await modalConfirm('Remove Task', 'Remove from config?\n\n<code>' + detail + '</code>');
+  if (!ok) return;
+  var result = await api('/api/delete-task', { index: index });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    loadTasks();
+  }
+}
+
+async function runSelectedTasks() {
+  var servers = getSelectedServers();
+  if (!servers.length) { appendLine('[ERROR] No servers selected'); return; }
+  var taskNames = getSelectedTasks();
+  if (!taskNames.length) { appendLine('[ERROR] No tasks selected'); return; }
+
+  // Validate selected tasks before running
+  var errors = [];
+  var warnings = [];
+  var selected = _cachedTasks.filter(function(t) { return taskNames.indexOf(t.name) >= 0; });
+  selected.forEach(function(t) {
+    if (t.type === 'command') {
+      if (!t.command || !t.command.trim()) { errors.push((t.command || t.name) + ': command is empty'); }
+      else {
+        var err = checkInteractiveCmd(t.command);
+        if (err) errors.push(t.command + ': ' + err);
+        if (t.modifying) warnings.push(t.command);
+      }
+    }
+    if (t.type === 'upload') {
+      var udesc = (t.src && t.dest) ? t.src + ' -> ' + t.dest : (t.src || t.dest || t.name);
+      if (!t.src) errors.push(udesc + ': missing src');
+      else if (!t.src.startsWith('/') && !(t.src.length >= 3 && t.src[1] === ':')) errors.push(udesc + ': src must be an absolute path');
+      else if (/[\/\\]$/.test(t.src)) errors.push(udesc + ': src must be a file path, not directory');
+      if (!t.dest) errors.push(udesc + ': missing dest');
+      else if (!t.dest.startsWith('/')) errors.push(udesc + ': dest must start with /');
+      else if (/[\/\\]$/.test(t.dest)) errors.push(udesc + ': dest must be a file path, not directory');
+    }
+    if (t.type === 'script') {
+      if (!t.src) errors.push((t.src || t.name) + ': missing src for script task');
+    }
+  });
+
+  if (errors.length) {
+    errors.forEach(function(e) { appendLine('[ERROR] ' + e); });
+    return;
+  }
+  if (warnings.length) {
+    appendLine('[WARN] Modifying commands: ' + warnings.join(', '));
+  }
+
+  appendLine('Running ' + taskNames.length + ' task(s) on ' + servers.join(', ') + '...');
+  await api('/api/run', { servers: servers, tasks: taskNames });
+}
+
+async function cancelTasks() {
+  var btn = document.getElementById('btnCancel');
+  if (btn && btn.disabled) return;
+  await api('/api/cancel', {});
+}
+
+async function previewSelectedTasks() {
+  var servers = getSelectedServers();
+  if (!servers.length) { appendLine('[ERROR] No servers selected'); return; }
+  var taskNames = getSelectedTasks();
+  if (!taskNames.length) { appendLine('[ERROR] No tasks selected'); return; }
+  var result = await api('/api/dry-run', { servers: servers, tasks: taskNames });
+  if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+  appendLine('\u2550\u2550\u2550 DRY RUN PREVIEW \u2550\u2550\u2550');
+  appendLine('Servers (' + result.servers.length + '):');
+  result.servers.forEach(function(s, i) {
+    appendLine('  ' + (i+1) + '. ' + s);
+  });
+  appendLine('Tasks (' + result.tasks.length + '):');
+  result.tasks.forEach(function(t, i) {
+    var mod = t.modifying ? '  \u26a0 modifying' : '';
+    appendLine('  ' + (i+1) + '. [' + t.type + '] ' + t.name + ': ' + t.detail + mod);
+  });
+  appendLine('\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
+}
+
+var INTERACTIVE_CMDS = ['top','htop','iotop','atop','nmon','glances','vi','vim','nvim','nano','emacs','pico','joe','mcedit','less','more','man','ssh','telnet','ftp','sftp','screen','tmux','byobu','mc'];
+var MODIFYING_CMDS = ['rm','rmdir','mv','cp','chmod','chown','chgrp','kill','killall','pkill','reboot','shutdown','halt','poweroff','init','mkfs','fdisk','parted','dd','userdel','useradd','usermod','groupdel','groupadd','iptables','firewall-cmd','ufw','yum','apt','apt-get','dnf','rpm','dpkg','pip','pip3'];
+
+function isModifyingCmd(cmd) {
+  var parts = cmd.trim().split(/\s+/);
+  var base = parts[0].replace(/^.*[\/\\]/, '');
+  if (MODIFYING_CMDS.indexOf(base) >= 0) return true;
+  if (base === 'sudo' && parts.length > 1 && MODIFYING_CMDS.indexOf(parts[1].replace(/^.*[\/\\]/, '')) >= 0) return true;
+  if (/\bsystemctl\s+(restart|stop|start|enable|disable|reload)\b/.test(cmd)) return true;
+  if (/\bservice\s+\S+\s+(restart|stop|start)\b/.test(cmd)) return true;
+  if (/>[^>]/.test(cmd)) return true;
+  return false;
+}
+
+function checkInteractiveCmd(cmd) {
+  var base = cmd.trim().split(/\s+/)[0].replace(/^.*[\/\\]/, '');
+  if (INTERACTIVE_CMDS.indexOf(base) >= 0) return "'" + base + "' is an interactive command and cannot be run via SSH Ops";
+  if (/\btail\b.*\s-[^\s]*f/.test(cmd)) return "tail -f (follow mode) is interactive";
+  if (/\bping\b(?!.*\s-c\b)/.test(cmd)) return "ping without -c runs forever";
+  if (/\bwatch\b/.test(cmd)) return "watch is interactive";
+  return null;
+}
+
+var _adhocTimer = null;
+var _adhocCountdown = null;
+var _adhocSeconds = 0;
+var ADHOC_TIMEOUT = 60;
+
+function toggleAdhoc(on) {
+  var panel = document.getElementById('actionsPanel');
+  var cdEl = document.getElementById('adhocCountdown');
+  clearInterval(_adhocTimer);
+  clearInterval(_adhocCountdown);
+  if (on) {
+    panel.classList.remove('locked');
+    _resetAdhocTimer();
+  } else {
+    panel.classList.add('locked');
+    cdEl.textContent = '';
+    document.getElementById('adhocToggle').checked = false;
+  }
+}
+
+function _resetAdhocTimer() {
+  clearInterval(_adhocTimer);
+  clearInterval(_adhocCountdown);
+  _adhocSeconds = ADHOC_TIMEOUT;
+  var cdEl = document.getElementById('adhocCountdown');
+  cdEl.textContent = _adhocSeconds + 's';
+  _adhocCountdown = setInterval(function() {
+    _adhocSeconds--;
+    cdEl.textContent = _adhocSeconds + 's';
+    if (_adhocSeconds <= 0) {
+      toggleAdhoc(false);
+    }
+  }, 1000);
+}
+
+function _touchAdhoc() {
+  if (document.getElementById('adhocToggle').checked) {
+    _resetAdhocTimer();
+  }
+}
+
+// --- Scheduled Command ---
+var _schedTimer = null;
+var _schedCmd = '';
+var _schedInterval = 60;
+var _schedRunning = false;
+
+function _schedKey(key) {
+  var cfg = document.getElementById('configSelect').value || 'default';
+  return 'sched:' + cfg + ':' + key;
+}
+function _loadSchedConfig() {
+  _schedCmd = localStorage.getItem(_schedKey('cmd')) || '';
+  _schedInterval = parseInt(localStorage.getItem(_schedKey('interval'))) || 60;
+}
+
+function openScheduleModal() {
+  var cmd = _schedCmd || document.getElementById('cmdInput').value.trim();
+  var interval = _schedInterval;
+  var cfgName = document.getElementById('configSelect').selectedOptions[0].textContent || 'default';
+  var html = '<div style="display:flex;flex-direction:column;gap:10px">'
+    + '<label style="font-size:12px;color:#555">Command</label>'
+    + '<input type="text" id="schedCmdInput" value="' + _escAttr(cmd) + '" placeholder="Enter command to run periodically" style="font-family:Consolas,monospace;font-size:13px;padding:6px 10px;border:1px solid #bbb;border-radius:3px">'
+    + '<label style="font-size:12px;color:#555">Interval (seconds)</label>'
+    + '<input type="number" id="schedIntervalInput" value="' + interval + '" min="10" max="86400" style="width:120px;padding:6px 10px;border:1px solid #bbb;border-radius:3px;font-size:13px">'
+    + '<div style="font-size:11px;color:#888">Min 10s. Command will run on all selected servers.</div>'
+    + '<div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:6px">Settings saved per config (<b>' + _escAttr(cfgName) + '</b>)</div>'
+    + '</div>';
+  var buttons = [];
+  if (_schedRunning) {
+    buttons.push({ text: '\u25a0 Stop', cls: 'btn danger', action: function() { stopSchedule(); } });
+  }
+  buttons.push({ text: _schedRunning ? 'Update' : '\u25b6 Start', cls: 'btn primary', noAutoClose: true, action: function() { startSchedule(); } });
+  buttons.push({ text: 'Cancel', cls: 'btn', action: function() {} });
+  _showModal('Schedule Periodic Command', html, buttons);
+}
+
+function startSchedule() {
+  var cmd = document.getElementById('schedCmdInput').value.trim();
+  var interval = parseInt(document.getElementById('schedIntervalInput').value) || 60;
+  if (!cmd) { appendLine('[ERROR] Enter a command for schedule'); return; }
+  var err = checkInteractiveCmd(cmd);
+  if (err) { appendLine('[ERROR] ' + err); return; }
+  if (interval < 10) interval = 10;
+
+  _schedCmd = cmd;
+  _schedInterval = interval;
+  localStorage.setItem(_schedKey('cmd'), cmd);
+  localStorage.setItem(_schedKey('interval'), interval);
+  stopSchedule(true);
+
+  _schedRunning = true;
+  _updateSchedIndicator();
+  appendLine('[Schedule] Started: "' + cmd + '" every ' + interval + 's');
+  _runScheduledCmd();
+  _schedTimer = setInterval(_runScheduledCmd, interval * 1000);
+  _closeModal();
+}
+
+function stopSchedule(silent) {
+  if (_schedTimer) { clearInterval(_schedTimer); _schedTimer = null; }
+  if (_schedRunning && !silent) {
+    appendLine('[Schedule] Stopped');
+  }
+  _schedRunning = false;
+  _updateSchedIndicator();
+}
+
+async function _runScheduledCmd() {
+  if (!_schedRunning) return;
+  var names = getSelectedServers();
+  if (!names.length) {
+    appendLine('[Schedule] No servers selected, skipping');
+    return;
+  }
+  await api('/api/run-command', { servers: names, command: _schedCmd });
+}
+
+function _updateSchedIndicator() {
+  var el = document.getElementById('schedIndicator');
+  var label = document.getElementById('schedLabel');
+  if (_schedRunning) {
+    el.style.display = '';
+    label.textContent = _schedInterval + 's: ' + (_schedCmd.length > 30 ? _schedCmd.substring(0, 30) + '...' : _schedCmd);
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function _escAttr(s) { return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+async function runCommand() {
+  _touchAdhoc();
+  var input = document.getElementById('cmdInput');
+  var cmd = input.value.trim();
+  if (!cmd) { appendLine('[ERROR] Enter a command first'); return; }
+
+  var err = checkInteractiveCmd(cmd);
+  if (err) { appendLine('[ERROR] ' + err); return; }
+
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+
+  appendLine('$ ' + cmd);
+  var result = await api('/api/run-command', { servers: names, command: cmd });
+  if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+  input.value = '';
+  setTimeout(loadCmdHistory, 500);
+}
+
+async function uploadFiles() {
+  _touchAdhoc();
+  var dest = document.getElementById('destInput').value.trim();
+  if (!dest) { appendLine('[ERROR] Enter a remote path first'); return; }
+  if (!pendingFiles.length) { appendLine('[ERROR] Select files first'); return; }
+
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+
+  if (pendingFiles.length > 1 && !dest.endsWith('/')) {
+    appendLine('[ERROR] Multiple files — dest must end with / (directory)');
+    return;
+  }
+  var isDir = dest.endsWith('/');
+  var mode = document.getElementById('execCheck').checked ? '0755' : '';
+
+  for (var i = 0; i < pendingFiles.length; i++) {
+    var file = pendingFiles[i];
+    var fileDest = isDir ? dest + file.name : dest;
+
+    var formData = new FormData();
+    formData.append('file', file);
+    formData.append('dest', fileDest);
+    formData.append('servers', names.join(','));
+    if (mode) formData.append('mode', mode);
+
+    appendLine('Uploading ' + file.name + ' -> ' + fileDest + '...');
+    var res = await fetch('/api/upload', { method: 'POST', body: formData });
+    var result = await res.json();
+    if (result.error) {
+      appendLine('[ERROR] ' + result.error);
+    }
+  }
+
+  clearFileList();
+  setTimeout(loadUploadHistory, 500);
+}
+
+// --- View config YAML ---
+async function viewTasksYaml() {
+  var res = await fetch('/api/tasks-yaml');
+  var text = await res.text();
+  var cfgName = document.getElementById('configSelect').selectedOptions[0].textContent;
+  var wrap = localStorage.getItem('yamlWrap') === 'true';
+  document.querySelector('.modal').classList.add('wide');
+  _showModal(cfgName + ' — Tasks', '<div class="yaml-editor-wrap"><textarea id="yamlEditorArea"></textarea></div>', [
+    { text: 'Close', cls: 'primary', action: function() {} }
+  ]);
+  setTimeout(function() {
+    // Add wrap toggle to title row
+    var titleEl = document.getElementById('modalTitle');
+    if (titleEl) {
+      titleEl.style.display = 'flex';
+      titleEl.style.justifyContent = 'space-between';
+      titleEl.style.alignItems = 'center';
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:11px;color:#888;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:4px;font-weight:normal';
+      lbl.innerHTML = '<input type="checkbox" id="yamlWrapToggle"' + (wrap ? ' checked' : '') + '>Wrap';
+      titleEl.appendChild(lbl);
+    }
+    var ta = document.getElementById('yamlEditorArea');
+    if (ta) {
+      var cm = CodeMirror.fromTextArea(ta, {
+        mode: 'yaml',
+        lineNumbers: true,
+        tabSize: 2,
+        indentWithTabs: false,
+        lineWrapping: wrap,
+        readOnly: 'nocursor'
+      });
+      cm.setValue(text);
+      cm.refresh();
+      document.getElementById('yamlWrapToggle').addEventListener('change', function() {
+        cm.setOption('lineWrapping', this.checked);
+        localStorage.setItem('yamlWrap', this.checked);
+      });
+    }
+  }, 50);
+}
+
+async function editConfigYaml() {
+  var res = await fetch('/api/config-yaml?raw=1');
+  var text = await res.text();
+  var cfgName = document.getElementById('configSelect').selectedOptions[0].textContent;
+  var wrap = localStorage.getItem('yamlWrap') === 'true';
+  var _cm = null;
+  document.querySelector('.modal').classList.add('wide');
+  _showModal(cfgName + ' — Edit Config',
+    '<div class="yaml-editor-wrap"><textarea id="yamlEditorArea"></textarea></div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">' +
+    '<span id="yamlValidation" style="font-size:12px;color:#666"></span>' +
+    '<span style="font-size:11px;color:#999">Saving will disconnect all connections</span></div>',
+    [
+      { text: 'Cancel', action: function() {} },
+      { text: 'Save', cls: 'primary', noAutoClose: true, action: async function() {
+        if (!_cm) return;
+        var yaml = _cm.getValue();
+        var valEl = document.getElementById('yamlValidation');
+        valEl.style.color = '#666';
+        valEl.textContent = 'Saving...';
+        var r = await fetch('/api/update-config-yaml', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({yaml: yaml})
+        });
+        var data = await r.json();
+        if (data.error) {
+          valEl.style.color = '#dc2626';
+          valEl.textContent = '\u2717 ' + data.error;
+        } else {
+          valEl.style.color = '#16a34a';
+          valEl.textContent = '\u2713 Saved and reloaded';
+          setTimeout(function() { _closeModal(); loadServers(); loadTasks(); }, 800);
+        }
+      }}
+    ]);
+  setTimeout(function() {
+    var titleEl = document.getElementById('modalTitle');
+    if (titleEl) {
+      titleEl.style.display = 'flex';
+      titleEl.style.justifyContent = 'space-between';
+      titleEl.style.alignItems = 'center';
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:11px;color:#888;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:4px;font-weight:normal';
+      lbl.innerHTML = '<input type="checkbox" id="yamlWrapToggle"' + (wrap ? ' checked' : '') + '>Wrap';
+      titleEl.appendChild(lbl);
+    }
+    var ta = document.getElementById('yamlEditorArea');
+    if (ta) {
+      _cm = CodeMirror.fromTextArea(ta, {
+        mode: 'yaml',
+        lineNumbers: true,
+        tabSize: 2,
+        indentWithTabs: false,
+        lineWrapping: wrap,
+        readOnly: false
+      });
+      _cm.setValue(text);
+      _cm.refresh();
+      document.getElementById('yamlWrapToggle').addEventListener('change', function() {
+        _cm.setOption('lineWrapping', this.checked);
+        localStorage.setItem('yamlWrap', this.checked);
+      });
+    }
+  }, 50);
+}
+
+function _escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// --- Add to tasks ---
+async function addCmdToTasks() {
+  var cmd = document.getElementById('cmdInput').value.trim();
+  if (!cmd) { appendLine('[ERROR] Enter a command first'); return; }
+  var cfgName = document.getElementById('configSelect').selectedOptions[0].textContent;
+  var ok = await modalConfirm('Add Command Task', 'Add to <code>' + cfgName + '.yml</code>:\n\n<code>' + cmd + '</code>');
+  if (!ok) return;
+  var result = await api('/api/add-task', { type: 'command', command: cmd });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    loadTasks();
+  }
+}
+
+// --- Add task via modal (left panel) ---
+function addTaskModal() {
+  var taskType = 'command';
+
+  function buildForm() {
+    var html = '<div class="type-toggle">'
+      + '<button class="' + (taskType === 'command' ? 'active' : '') + '" onclick="document.querySelector(\'.type-toggle button.active\').classList.remove(\'active\');this.classList.add(\'active\');_switchTaskType(\'command\')">Command</button>'
+      + '<button class="' + (taskType === 'upload' ? 'active' : '') + '" onclick="document.querySelector(\'.type-toggle button.active\').classList.remove(\'active\');this.classList.add(\'active\');_switchTaskType(\'upload\')">Upload</button>'
+      + '</div>'
+      + '<div id="taskFields"></div>';
+    return html;
+  }
+
+  function renderFields(type) {
+    var el = document.getElementById('taskFields');
+    if (!el) return;
+    if (type === 'command') {
+      el.innerHTML = '<div class="modal-field"><label>command</label>'
+        + '<input type="text" id="modalCmd" placeholder="echo hello" oninput="this.style.borderColor=this.value.trim()&&isModifyingCmd(this.value.trim())?\'#d97706\':\'\'"></div>';
+      setTimeout(function() { var f = document.getElementById('modalCmd'); if (f) f.focus(); }, 50);
+    } else {
+      el.innerHTML = '<div class="modal-field"><label>src (local absolute file path)</label>'
+        + '<input type="text" id="modalSrc" placeholder="/opt/files/app.conf"></div>'
+        + '<div class="modal-field"><label>dest (remote absolute file path)</label>'
+        + '<input type="text" id="modalDest" placeholder="/opt/app/config/app.conf"></div>'
+        + '<label class="modal-check"><input type="checkbox" id="modalExec">mode: 0755 (executable)</label>';
+      setTimeout(function() { var f = document.getElementById('modalSrc'); if (f) f.focus(); }, 50);
+    }
+  }
+
+  window._switchTaskType = function(type) {
+    taskType = type;
+    renderFields(type);
+  };
+
+  _showModal('Add Task', buildForm(), [
+    { text: 'Cancel', action: function() {} },
+    { text: 'Add', cls: 'primary', action: async function() {
+      if (taskType === 'command') {
+        var cmd = document.getElementById('modalCmd').value.trim();
+        if (!cmd) { appendLine('[ERROR] Enter a command'); return; }
+        var err = checkInteractiveCmd(cmd);
+        if (err) { appendLine('[ERROR] ' + err); return; }
+        var result = await api('/api/add-task', { type: 'command', command: cmd });
+        if (result.error) { appendLine('[ERROR] ' + result.error); }
+        else { loadTasks(); }
+      } else {
+        var src = document.getElementById('modalSrc').value.trim();
+        var dest = document.getElementById('modalDest').value.trim();
+        if (!src || !dest) { appendLine('[ERROR] src and dest required'); return; }
+        if (!src.startsWith('/') && !(src.length >= 3 && src[1] === ':')) { appendLine('[ERROR] src must be an absolute path'); return; }
+        if (/[\/\\]$/.test(src)) { appendLine('[ERROR] src must be a file path, not a directory'); return; }
+        if (!dest.startsWith('/')) { appendLine('[ERROR] dest must be an absolute path (start with /)'); return; }
+        if (/[\/\\]$/.test(dest)) { appendLine('[ERROR] dest must be a file path, not a directory'); return; }
+        var body = { type: 'upload', src: src, dest: dest };
+        if (document.getElementById('modalExec').checked) body.mode = '0755';
+        var result = await api('/api/add-task', body);
+        if (result.error) { appendLine('[ERROR] ' + result.error); }
+        else { loadTasks(); }
+      }
+    }}
+  ]);
+
+  renderFields(taskType);
+}
+
+// --- Inline error display helper ---
+function _showInlineError(containerId, msg) {
+  var el = document.getElementById(containerId);
+  if (!el) return;
+  var err = el.querySelector('.modal-error');
+  if (!err) {
+    err = document.createElement('div');
+    err.className = 'modal-error';
+    el.appendChild(err);
+  }
+  err.textContent = msg;
+  err.style.display = msg ? '' : 'none';
+}
+
+function _markInvalid(id, invalid) {
+  var el = document.getElementById(id);
+  if (el) el.classList.toggle('invalid', invalid);
+}
+
+// --- New Config (simple: just name, then use sidebar to add servers/tasks) ---
+async function newConfigModal() {
+  var name = await modalPrompt(
+    'Create New Config',
+    'Enter a name for the new config.<br>After creation, use the <b>+</b> buttons in the sidebar to add servers and tasks.<br><br><small>Will switch to new config and disconnect all connections.</small>',
+    '',
+    'Only letters, numbers, hyphens and underscores'
+  );
+  if (!name || !name.trim()) return;
+  name = name.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    appendLine('[ERROR] Config name must be alphanumeric (hyphens and underscores allowed)');
+    return;
+  }
+  var result = await api('/api/create-config', { name: name, servers: [], tasks: [] });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    appendLine('Config "' + name + '" created — use + buttons to add servers and tasks');
+    closeAllTabs();
+    loadConfigs();
+    loadServers();
+    loadTasks();
+  }
+  setTimeout(function() { var f = document.getElementById('ncName'); if (f) f.focus(); }, 50);
+}
+
+// --- Duplicate current config ---
+async function duplicateConfigModal() {
+  var currentName = document.getElementById('configSelect');
+  var baseName = currentName ? (currentName.options[currentName.selectedIndex]?.text || 'config') : 'config';
+  var suggested = baseName + '-copy';
+  var name = await modalPrompt(
+    'Duplicate Config',
+    'Create a copy of the current config (<code>' + baseName + '</code>).<br>Enter a name for the new config:<br><br><small>Will switch to new config and disconnect all connections.</small>',
+    suggested,
+    'Only letters, numbers, hyphens and underscores'
+  );
+  if (!name || !name.trim()) return;
+  name = name.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    appendLine('[ERROR] Config name must be alphanumeric (hyphens and underscores allowed)');
+    return;
+  }
+  var result = await api('/api/duplicate-config', { name: name });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    appendLine('Config duplicated as "' + name + '"');
+    closeAllTabs();
+    loadConfigs();
+    loadServers();
+    loadTasks();
+  }
+}
+
+// --- Rename current config ---
+async function renameConfigModal() {
+  var currentName = document.getElementById('configSelect');
+  var baseName = currentName ? (currentName.options[currentName.selectedIndex]?.text || 'config') : 'config';
+  var name = await modalPrompt(
+    'Rename Config',
+    'Rename the current config (<code>' + baseName + '</code>).<br>All connections will be disconnected.<br><br>Enter the new name:',
+    baseName,
+    'Only letters, numbers, hyphens and underscores'
+  );
+  if (!name || !name.trim()) return;
+  name = name.trim();
+  if (name === baseName) return;
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    appendLine('[ERROR] Config name must be alphanumeric (hyphens and underscores allowed)');
+    return;
+  }
+  var result = await api('/api/rename-config', { name: name });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    appendLine('Config renamed to "' + name + '"');
+    closeAllTabs();
+    loadConfigs();
+    loadServers();
+    loadTasks();
+  }
+}
+
+// --- Delete current config ---
+async function deleteConfigModal() {
+  var currentName = document.getElementById('configSelect');
+  var baseName = currentName ? (currentName.options[currentName.selectedIndex]?.text || 'config') : 'config';
+  var ok = await modalConfirm(
+    'Delete Config',
+    'Permanently delete config <code>' + baseName + '</code>?<br><br>'
+    + 'All servers will be disconnected.<br>'
+    + 'The application will switch to another available config.<br><br>'
+    + '<b style="color:#dc2626">This action cannot be undone.</b>'
+  );
+  if (!ok) return;
+  var result = await api('/api/delete-config', { confirm: true });
+  if (result.error) {
+    alert('Delete failed: ' + result.error);
+  } else {
+    var switchedTo = result.switched_to ? result.switched_to.replace(/^.*[\/\\]/, '').replace(/\.ya?ml$/, '') : '';
+    appendLine('Deleted config \'' + baseName + '\'' + (switchedTo ? ', switched to \'' + switchedTo + '\'' : ''));
+    closeAllTabs();
+    await loadConfigs();
+    loadServers();
+    loadTasks();
+  }
+}
+
+// --- Proxy (PSMP) settings ---
+async function proxySettingsModal() {
+  var res = await fetch('/api/proxy-info');
+  var info = await res.json();
+  var enabled = info.enabled;
+
+  var html = '<div id="proxyFormWrap">'
+    + '<div class="modal-field"><label>PSMP Host <span style="color:#dc2626">*</span></label>'
+    + '<input type="text" id="pxHost" placeholder="psmp-proxy.example.com" value="' + (enabled ? info.host : '') + '"></div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<div class="modal-field" style="flex:1"><label>User <span style="color:#dc2626">*</span></label>'
+    + '<input type="text" id="pxUser" placeholder="your_user" value="' + (enabled ? info.user : '') + '"></div>'
+    + '<div class="modal-field" style="flex:1"><label>Account <span style="color:#dc2626">*</span></label>'
+    + '<input type="text" id="pxAccount" placeholder="svcadmin" value="' + (enabled ? info.account : '') + '"></div></div>'
+    + '<div class="modal-hint" style="display:block;margin-top:4px;color:#888;font-size:12px">'
+    + 'Connection format: <code>user@account@server_host@psmp_host</code><br>'
+    + 'OTP will be prompted when connecting.<br>'
+    + '<b>Saving will disconnect all connections.</b></div>'
+    + '<div class="modal-error" style="display:none" id="pxErr"></div></div>';
+
+  var buttons = [
+    { text: 'Cancel', action: function() {} }
+  ];
+  if (enabled) {
+    buttons.push({ text: 'Remove Proxy', cls: 'danger', action: async function() {
+      var result = await api('/api/update-proxy', { remove: true });
+      if (result.error) { alert('Error: ' + result.error); }
+      else { loadServers(); }
+    }});
+  }
+  buttons.push({ text: 'Save', cls: 'primary', action: async function() {
+    var host = (document.getElementById('pxHost').value || '').trim();
+    var user = (document.getElementById('pxUser').value || '').trim();
+    var account = (document.getElementById('pxAccount').value || '').trim();
+    var errEl = document.getElementById('pxErr');
+    if (!host || !user || !account) {
+      if (errEl) { errEl.textContent = 'All fields are required'; errEl.style.display = ''; }
+      document.getElementById('modalOverlay').classList.add('show');
+      return;
+    }
+    var result = await api('/api/update-proxy', { host: host, user: user, account: account });
+    if (result.error) {
+      if (errEl) { errEl.textContent = result.error; errEl.style.display = ''; }
+      document.getElementById('modalOverlay').classList.add('show');
+    } else {
+      loadServers();
+    }
+  }});
+
+  _showModal('Proxy Settings (PSMP)', html, buttons);
+}
+
+// --- Add server to current config ---
+function addServerModal() {
+  var html = '<div id="asFormWrap">'
+    + '<div class="modal-field"><label>Host (IP or hostname) <span style="color:#dc2626">*</span></label>'
+    + '<input type="text" id="asHost" placeholder="10.0.0.1"></div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<div class="modal-field" style="flex:1"><label>Name (optional, defaults to host)</label>'
+    + '<input type="text" id="asName" placeholder="web1"></div>'
+    + '<div class="modal-field" style="width:80px"><label>Port</label>'
+    + '<input type="text" id="asPort" placeholder="22" value="22"></div></div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<div class="modal-field" style="flex:1"><label>Username</label>'
+    + '<input type="text" id="asUser" placeholder="root"></div>'
+    + '<div class="modal-field" style="flex:1"><label>Password (optional)</label>'
+    + '<input type="text" id="asPass" placeholder=""></div></div>'
+    + '<div class="modal-field"><label>Groups (comma-separated, optional)</label>'
+    + '<input type="text" id="asGroups" placeholder="web, prod"></div>'
+    + '<div class="modal-error" style="display:none" id="asErr"></div></div>';
+
+  function validate() {
+    // Clear previous state
+    ['asHost', 'asPort'].forEach(function(id) { _markInvalid(id, false); });
+    var errEl = document.getElementById('asErr');
+    if (errEl) { errEl.style.display = 'none'; }
+
+    var host = (document.getElementById('asHost').value || '').trim();
+    if (!host) {
+      _markInvalid('asHost', true);
+      if (errEl) { errEl.textContent = 'Host is required'; errEl.style.display = ''; }
+      document.getElementById('asHost').focus();
+      return null;
+    }
+    var port = (document.getElementById('asPort').value || '').trim();
+    if (port) {
+      var p = parseInt(port);
+      if (isNaN(p) || p < 1 || p > 65535) {
+        _markInvalid('asPort', true);
+        if (errEl) { errEl.textContent = 'Port must be a number between 1 and 65535'; errEl.style.display = ''; }
+        document.getElementById('asPort').focus();
+        return null;
+      }
+    }
+    var body = { host: host };
+    var name = (document.getElementById('asName').value || '').trim();
+    if (name) body.name = name;
+    if (port && port !== '22') body.port = parseInt(port);
+    var user = (document.getElementById('asUser').value || '').trim();
+    if (user) body.username = user;
+    var pass = (document.getElementById('asPass').value || '').trim();
+    if (pass) body.password = pass;
+    var groups = (document.getElementById('asGroups').value || '').trim();
+    if (groups) body.groups = groups;
+    return body;
+  }
+
+  _showModal('Add Server to Current Config', html, [
+    { text: 'Cancel', action: function() {} },
+    { text: 'Add Server', cls: 'primary', action: async function() {
+      var body = validate();
+      if (!body) {
+        // Re-show modal (it was closed by _showModal button handler)
+        document.getElementById('modalOverlay').classList.add('show');
+        return;
+      }
+      var result = await api('/api/add-server', body);
+      if (result.error) {
+        var errEl = document.getElementById('asErr');
+        if (errEl) { errEl.textContent = result.error; errEl.style.display = ''; }
+        document.getElementById('modalOverlay').classList.add('show');
+      } else {
+        appendLine('Server "' + (body.name || body.host) + '" added to config');
+        loadServers();
+      }
+    }}
+  ]);
+  // Keyboard support: Enter to submit, Escape to cancel
+  var wrap = document.getElementById('asFormWrap');
+  if (wrap) {
+    wrap.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var addBtn = document.querySelector('#modalButtons .primary');
+        if (addBtn) addBtn.click();
+      }
+      if (e.key === 'Escape') { e.preventDefault(); _closeModal(); }
+    });
+  }
+  setTimeout(function() { var f = document.getElementById('asHost'); if (f) f.focus(); }, 50);
+}
+
+async function deleteServer(index, name) {
+  var ok = await modalConfirm('Remove Server', 'Remove <code>' + name + '</code> from config?\n\nIf connected, it will be disconnected.');
+  if (!ok) return;
+  var result = await api('/api/delete-server', { index: index });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    loadServers();
+  }
+}
+
+async function editServerPassword(index, name) {
+  var pwd = await modalPrompt(
+    'Change Password',
+    'Update password for <code>' + name + '</code>.<br>Leave empty to remove password (use SSH key instead).',
+    '',
+    'If connected, it will be disconnected and needs reconnect'
+  );
+  if (pwd === null) return; // cancelled
+  var result = await api('/api/update-server-password', { index: index, password: pwd });
+  if (result.error) {
+    appendLine('[ERROR] ' + result.error);
+  } else {
+    appendLine('Password updated for ' + name + (pwd ? '' : ' (cleared)'));
+  }
+}
+
+// --- Resizable panel ---
+(function() {
+  var divider = document.getElementById('divider');
+  var panel = document.querySelector('.panel');
+  var STORAGE_KEY = 'ssh-ops-panel-width';
+  var saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) panel.style.width = saved + 'px';
+
+  var startX, startW;
+  divider.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    divider.classList.add('active');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  function onMove(e) {
+    var w = startW + (e.clientX - startX);
+    w = Math.max(160, Math.min(600, w));
+    panel.style.width = w + 'px';
+  }
+  function onUp() {
+    divider.classList.remove('active');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    localStorage.setItem(STORAGE_KEY, panel.offsetWidth);
+  }
+})();
+
+// --- Server status polling ---
+async function refreshServerStatus() {
+  try {
+    var res = await fetch('/api/servers');
+    var servers = await res.json();
+    var list = document.getElementById('serverList');
+    var items = list.querySelectorAll('.server-item');
+    if (items.length !== servers.length) { loadServers(); return; }
+    servers.forEach(function(s, i) {
+      var dot = items[i].querySelector('.dot');
+      if (dot) {
+        dot.classList.toggle('connected', s.connected);
+      }
+    });
+  } catch (e) { /* ignore fetch errors */ }
+}
+
+// --- Init ---
+connectWS();
+loadConfigs();
+loadServers();
+loadTasks();
+loadCmdHistory();
+loadUploadHistory();
+// Restore T toggle state
+try {
+  if (localStorage.getItem('ssh-ops-hide-ts')) {
+    var tBtn = document.querySelector('.panel-toolbar .tbtn');
+    if (tBtn) { tBtn.classList.add('active'); document.getElementById('tabPanels').classList.add('hide-ts'); }
+  }
+} catch(e) {}
+setInterval(refreshServerStatus, 3000);
+</script>
+</body>
+</html>

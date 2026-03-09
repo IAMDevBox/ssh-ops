@@ -1,0 +1,15 @@
+servers:
+- host: 192.168.1.10
+  username: admin
+  password: $SSH_PASSWORD
+- host: 192.168.1.11
+  username: admin
+  password: $SSH_PASSWORD
+tasks:
+- src: /home/admin/scripts/deploy.sh
+  dest: /opt/app/deploy.sh
+  mode: 493
+- command: /opt/app/deploy.sh
+- src: /home/admin/files/app.conf
+  dest: /opt/app/config/app.conf
+- command: echo "done"
