@@ -172,6 +172,7 @@
   .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); z-index: 1000; justify-content: center; align-items: center; }
   .modal-overlay.show { display: flex; }
   .modal { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; min-width: 360px; max-width: 800px; width: 50vw; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+  .modal.narrow { width: auto; min-width: 280px; max-width: 400px; }
   .modal.wide { max-width: 95vw; width: 85vw; height: 85vh; padding: 12px 16px; display: flex; flex-direction: column; }
   .modal.wide .modal-title { margin-bottom: 6px; }
   .modal.wide .modal-body { flex: 1; overflow: hidden; margin-bottom: 8px; display: flex; flex-direction: column; }
@@ -378,6 +379,9 @@ function clearFileList() {
 var _modalResolve = null;
 
 function _showModal(title, bodyHtml, buttons, inputOpts) {
+  var modal = document.querySelector('.modal');
+  modal.classList.remove('narrow');
+  if (inputOpts && inputOpts.narrow) modal.classList.add('narrow');
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = bodyHtml;
   var inp = document.getElementById('modalInput');
@@ -407,7 +411,9 @@ function _showModal(title, bodyHtml, buttons, inputOpts) {
 
 function _closeModal() {
   document.getElementById('modalOverlay').classList.remove('show');
-  document.querySelector('.modal').classList.remove('wide');
+  var modal = document.querySelector('.modal');
+  modal.classList.remove('wide');
+  modal.classList.remove('narrow');
 }
 
 function modalConfirm(title, bodyHtml) {
@@ -420,13 +426,13 @@ function modalConfirm(title, bodyHtml) {
   });
 }
 
-function modalPrompt(title, bodyHtml, defaultVal, hint) {
+function modalPrompt(title, bodyHtml, defaultVal, hint, opts) {
   return new Promise(function(resolve) {
     _modalResolve = resolve;
     _showModal(title, bodyHtml, [
       { text: 'Cancel', action: function() { _modalResolve = null; resolve(null); } },
       { text: 'OK', cls: 'primary', action: function() { _modalResolve = null; resolve(document.getElementById('modalInput').value); } }
-    ], { value: defaultVal || '', hint: hint || '' });
+    ], { value: defaultVal || '', hint: hint || '', narrow: opts && opts.narrow });
     document.getElementById('modalInput').addEventListener('keydown', function handler(e) {
       if (e.key === 'Enter') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(e.target.value); }
       if (e.key === 'Escape') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(null); }
@@ -736,13 +742,36 @@ async function clearActivePanel() {
   await fetch('/api/clear-history', { method: 'POST' });
 }
 
+// --- Connection state ---
+var _backendAlive = false;
+
+function _setBackendAlive(alive) {
+  if (_backendAlive === alive) return;
+  _backendAlive = alive;
+  var el = document.getElementById('wsStatus');
+  if (alive) {
+    el.textContent = 'Connected';
+    el.style.color = '#16a34a';
+    loadServers();
+    // Reset Run/Cancel — backend restart clears running state
+    var btnRun = document.getElementById('btnRun');
+    var btnCancel = document.getElementById('btnCancel');
+    if (btnRun) btnRun.style.display = '';
+    if (btnCancel) { btnCancel.style.display = 'none'; btnCancel.disabled = false; btnCancel.innerHTML = '&#x25a0; Cancel'; }
+  } else {
+    el.textContent = 'Disconnected';
+    el.style.color = '#dc2626';
+    document.querySelectorAll('.dot.connected').forEach(function(d) { d.classList.remove('connected'); });
+  }
+}
+
 // --- WebSocket ---
 function connectWS() {
   var proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(proto + '://' + location.host + '/ws');
-  ws.onopen = function() { document.getElementById('wsStatus').textContent = 'Connected'; };
+  ws.onopen = function() { _setBackendAlive(true); };
   ws.onclose = function() {
-    document.getElementById('wsStatus').textContent = 'Disconnected';
+    _setBackendAlive(false);
     setTimeout(connectWS, 3000);
   };
   ws.onmessage = function(e) {
@@ -756,17 +785,36 @@ function connectWS() {
 
 // --- API helpers ---
 async function api(url, body) {
-  var res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return res.json();
+  try {
+    var res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    _setBackendAlive(true);
+    return res.json();
+  } catch (e) {
+    _setBackendAlive(false);
+    appendLine('[ERROR] Backend unreachable — connection lost');
+    return { error: 'Backend unreachable' };
+  }
+}
+
+async function apiGet(url) {
+  try {
+    var res = await fetch(url);
+    _setBackendAlive(true);
+    return res;
+  } catch (e) {
+    _setBackendAlive(false);
+    return null;
+  }
 }
 
 // --- Config management ---
 async function loadConfigs() {
-  var res = await fetch('/api/configs');
+  var res = await apiGet('/api/configs');
+  if (!res) return;
   var data = await res.json();
   var select = document.getElementById('configSelect');
   select.textContent = '';
@@ -838,7 +886,8 @@ async function reloadConfig() {
 
 // --- Load data ---
 async function loadServers() {
-  var res = await fetch('/api/servers');
+  var res = await apiGet('/api/servers');
+  if (!res) return;
   var servers = await res.json();
   var list = document.getElementById('serverList');
   list.textContent = '';
@@ -923,7 +972,8 @@ var _cachedTasks = [];
 var _dragFromIdx = null;
 
 async function loadTasks() {
-  var res = await fetch('/api/tasks');
+  var res = await apiGet('/api/tasks');
+  if (!res) return;
   var tasks = await res.json();
   _cachedTasks = tasks;
   var list = document.getElementById('taskList');
@@ -1315,7 +1365,7 @@ async function connectSelected() {
 
   var otp = null;
   if (needsOtp) {
-    otp = await modalPrompt('PSMP Authentication', 'Enter RSA OTP token:', '', 'One-time password from your RSA token');
+    otp = await modalPrompt('PSMP Authentication', 'Enter OTP:', '', 'One-time password', { narrow: true });
     if (!otp) return;  // user cancelled
   }
 
@@ -1423,7 +1473,8 @@ async function runSelectedTasks() {
   }
 
   appendLine('Running ' + taskNames.length + ' task(s) on ' + servers.join(', ') + '...');
-  await api('/api/run', { servers: servers, tasks: taskNames });
+  var result = await api('/api/run', { servers: servers, tasks: taskNames });
+  if (result.error) appendLine('[ERROR] ' + result.error);
 }
 
 async function cancelTasks() {
@@ -1585,12 +1636,19 @@ function stopSchedule(silent) {
 
 async function _runScheduledCmd() {
   if (!_schedRunning) return;
+  if (!_backendAlive) {
+    appendLine('[Schedule] Backend unreachable, stopping schedule');
+    _schedRunning = false;
+    _updateSchedIndicator();
+    return;
+  }
   var names = getSelectedServers();
   if (!names.length) {
     appendLine('[Schedule] No servers selected, skipping');
     return;
   }
-  await api('/api/run-command', { servers: names, command: _schedCmd });
+  var result = await api('/api/run-command', { servers: names, command: _schedCmd });
+  if (result.error) appendLine('[Schedule] ' + result.error);
 }
 
 function _updateSchedIndicator() {
@@ -1652,10 +1710,15 @@ async function uploadFiles() {
     if (mode) formData.append('mode', mode);
 
     appendLine('Uploading ' + file.name + ' -> ' + fileDest + '...');
-    var res = await fetch('/api/upload', { method: 'POST', body: formData });
-    var result = await res.json();
-    if (result.error) {
-      appendLine('[ERROR] ' + result.error);
+    try {
+      var res = await fetch('/api/upload', { method: 'POST', body: formData });
+      var result = await res.json();
+      if (result.error) {
+        appendLine('[ERROR] ' + result.error);
+      }
+    } catch (e) {
+      _setBackendAlive(false);
+      appendLine('[ERROR] Backend unreachable — upload failed');
     }
   }
 

@@ -429,10 +429,19 @@ def mock_app(tmp_config, tmp_path):
     mock_session.is_alive.return_value = True
     mock_session.upload_file.return_value = None
 
+    _connected = {"web1": True}  # pre-connected for tests that assume connected state
+
+    def _mock_connect(server, otp=None):
+        _connected[server.name] = True
+        return mock_session
+
+    def _mock_get_session(name):
+        return mock_session if name in _connected else None
+
     with patch("ssh_ops.server.ConnectionPool") as MockPool:
         pool_instance = MockPool.return_value
-        pool_instance.connect.return_value = mock_session
-        pool_instance.get_session.return_value = mock_session
+        pool_instance.connect.side_effect = _mock_connect
+        pool_instance.get_session.side_effect = _mock_get_session
         pool_instance.connected_servers.return_value = ["web1"]
         pool_instance.disconnect.return_value = None
         pool_instance.disconnect_all.return_value = None
@@ -450,7 +459,7 @@ class TestConnectServers:
     def test_connect_by_name(self, mock_client):
         resp = mock_client.post("/api/connect", json={"servers": ["web1"]})
         data = resp.json()
-        assert data.get("web1") == "connected"
+        assert data.get("web1") == "already_connected"
 
     def test_connect_all(self, mock_client):
         resp = mock_client.post("/api/connect", json={"all": True})
@@ -1851,11 +1860,19 @@ class TestOTPRequired:
 
 class TestMOTDBroadcast:
     def test_connect_shows_motd(self, client):
-        with patch("ssh_ops.server.ConnectionPool.connect") as mock_connect:
-            mock_session = MagicMock()
-            mock_session.motd = "Welcome to server\nSystem ready"
-            mock_connect.return_value = mock_session
-            with patch("ssh_ops.server.ConnectionPool.get_session", return_value=mock_session):
+        _connected = {}
+        mock_session = MagicMock()
+        mock_session.motd = "Welcome to server\nSystem ready"
+
+        def _mock_connect(server, otp=None):
+            _connected[server.name] = True
+            return mock_session
+
+        def _mock_get(name):
+            return mock_session if name in _connected else None
+
+        with patch("ssh_ops.server.ConnectionPool.connect", side_effect=_mock_connect):
+            with patch("ssh_ops.server.ConnectionPool.get_session", side_effect=_mock_get):
                 resp = client.post("/api/connect", json={"servers": ["web1"]})
                 assert resp.json().get("web1") == "connected"
 

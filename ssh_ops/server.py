@@ -762,8 +762,9 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         import concurrent.futures
 
         def _connect_one(server):
+            was_alive = pool.get_session(server.name) is not None
             pool.connect(server, otp=otp if server.needs_otp else None)
-            return server.name
+            return "already_connected" if was_alive else "connected"
 
         # Connect in parallel so OTP doesn't expire for later servers
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(targets)) as ex:
@@ -771,15 +772,16 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             for future in concurrent.futures.as_completed(futures):
                 server = futures[future]
                 try:
-                    future.result()
-                    results[server.name] = "connected"
+                    results[server.name] = future.result()
                 except Exception as e:
                     results[server.name] = f"error: {e}"
 
         # Broadcast results after all connections complete
         for server in targets:
             msg = results.get(server.name, "unknown")
-            if msg == "connected":
+            if msg == "already_connected":
+                await _broadcast(f"[{server.name}] Already connected")
+            elif msg == "connected":
                 await _broadcast(f"[{server.name}] Connected")
                 # Show MOTD/banner if available
                 session = pool.get_session(server.name)
