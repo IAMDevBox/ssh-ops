@@ -33,97 +33,28 @@ def _exhaust_generator(gen):
 
 
 class SSHSession:
-    """Wraps a paramiko SSH connection."""
+    """Wraps an SSH connection — paramiko for direct, asyncssh for PSMP proxy."""
 
     def __init__(self, server: ServerConfig, keep_alive: int = 60,
                  otp: str | None = None, reason: str = "test"):
         self.server = server
         self.motd = ""
-        self.client = paramiko.SSHClient()
-        self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self._psmp = None  # set for PSMP proxy path
+        self.client = None  # set for direct path
         self._lock = threading.Lock()
 
         if server.proxy:  # pragma: no cover — PSMP proxy path
+            from .psmp_shell import PsmpShell
             proxy = server.proxy
             compound_user = proxy.ssh_username(server.host)
-
-            # Enable Paramiko debug logging
-            import logging, sys
-            paramiko_logger = logging.getLogger("paramiko")
-            paramiko_logger.setLevel(logging.DEBUG)
-            paramiko_logger.propagate = False
-            if not paramiko_logger.handlers:
-                _handler = logging.StreamHandler(sys.stderr)
-                _handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
-                paramiko_logger.addHandler(_handler)
-
-            otp_val = otp or ""
-            _t0 = time.time()
-            print(f"[PSMP DEBUG] host={proxy.host}:{proxy.port}", file=sys.stderr)
-            print(f"[PSMP DEBUG] user={compound_user}", file=sys.stderr)
-            print(f"[PSMP DEBUG] otp length={len(otp_val)}, empty={not otp_val}",
-                  file=sys.stderr)
-            if otp_val:
-                print(f"[PSMP DEBUG] otp first/last char: "
-                      f"{otp_val[0]}...{otp_val[-1]}", file=sys.stderr)
-
-            try:
-                # SSHClient.connect() with OpenSSH version string
-                # Uses standard auth flow (none probe → password), matching PuTTY
-                class _OpenSSHTransport(paramiko.Transport):
-                    def __init__(self, *args, **kwargs):
-                        super().__init__(*args, **kwargs)
-                        self.local_version = "SSH-2.0-OpenSSH_8.9"
-
-                print("[PSMP DEBUG] SSHClient.connect + OpenSSH version",
-                      file=sys.stderr)
-                self.client.connect(
-                    hostname=proxy.host,
-                    port=proxy.port,
-                    username=compound_user,
-                    password=otp_val,
-                    look_for_keys=False,
-                    allow_agent=False,
-                    transport_factory=_OpenSSHTransport,
-                )
-                _dt = time.time() - _t0
-                print(f"[PSMP DEBUG] auth succeeded ({_dt:.1f}s)",
-                      file=sys.stderr)
-            except Exception as e:
-                _dt = time.time() - _t0
-                print(f"[PSMP DEBUG] auth failed ({_dt:.1f}s): "
-                      f"{type(e).__name__}: {e}", file=sys.stderr)
-                raise RuntimeError(
-                    f"PSMP auth failed: {type(e).__name__}: {e}\n"
-                    f"  proxy={proxy.host}:{proxy.port}\n"
-                    f"  username={compound_user}\n"
-                    f"  otp_length={len(otp_val)}, elapsed={_dt:.1f}s"
-                ) from e
-
-            # Handle reason prompt via a temporary shell channel
-            shell = self.client.invoke_shell()
-            self._expect_send(shell, b'reason', reason, timeout=30)
-
-            # Drain MOTD — wait for shell prompt ($ or #)
-            motd_buf = b""
-            prompt_deadline = time.time() + 15
-            while time.time() < prompt_deadline:
-                shell.settimeout(max(1, prompt_deadline - time.time()))
-                try:
-                    data = shell.recv(4096)
-                except Exception:
-                    break
-                if not data:
-                    break
-                motd_buf += data
-                text = motd_buf.decode(errors="replace")
-                stripped = _ANSI_RE.sub('', text).rstrip()
-                if stripped and (stripped.endswith('$') or stripped.endswith('#')):
-                    break
-
-            self.motd = _ANSI_RE.sub('', motd_buf.decode(errors="replace").strip())
-            shell.close()
+            self._psmp = PsmpShell(
+                proxy.host, proxy.port, compound_user,
+                otp or "", reason, keep_alive,
+            )
+            self.motd = self._psmp.motd
         else:
+            self.client = paramiko.SSHClient()
+            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             connect_args = {
                 "hostname": server.host,
                 "port": server.port,
@@ -137,37 +68,19 @@ class SSHSession:
 
             self.client.connect(**connect_args)
 
-        # Enable keepalive
-        transport = self.client.get_transport()
-        if transport:
-            transport.set_keepalive(keep_alive)
-
-    @staticmethod
-    def _expect_send(shell, expect: bytes, response: str,
-                         timeout: int = 15):  # pragma: no cover — PSMP only
-        """Read from shell until `expect` appears, then send response."""
-        buf = b""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            shell.settimeout(max(1, deadline - time.time()))
-            try:
-                data = shell.recv(4096)
-            except Exception:
-                break
-            if not data:
-                break
-            buf += data
-            if expect in buf.lower():
-                shell.sendall(f"{response}\n".encode())
-                return
-        raise RuntimeError(f"Timeout waiting for '{expect.decode()}' prompt")
+            # Enable keepalive
+            transport = self.client.get_transport()
+            if transport:
+                transport.set_keepalive(keep_alive)
 
     def exec_command(self, command: str, timeout: int = 120,
                      env: dict | None = None) -> Generator[str, None, int]:
         """Execute command and yield output lines. Returns exit code via StopIteration."""
-        # Collect all output inside the lock so it's released promptly
+        if self._psmp:  # pragma: no cover
+            return self._psmp.run_command(command, timeout, env)
+
+        # Direct path — paramiko exec_command
         with self._lock:
-            # Build env prefix
             env_prefix = ""
             if env:
                 for k in env:
@@ -182,7 +95,6 @@ class SSHSession:
             )
             stdin.close()
 
-            # Read stdout and stderr concurrently to preserve ordering
             output_lines = []
             stderr_lines = []
 
@@ -201,7 +113,6 @@ class SSHSession:
 
             exit_code = stdout.channel.recv_exit_status()
 
-        # Yield outside the lock — safe even if caller abandons the generator
         for text in output_lines:
             yield text
         return exit_code
@@ -209,6 +120,9 @@ class SSHSession:
     def upload_file(self, local_path: str, remote_path: str,
                     mode: str | int | None = None) -> None:
         """Upload a local file to remote server via SFTP."""
+        if self._psmp:  # pragma: no cover
+            raise RuntimeError(
+                "File transfer not supported through PSMP proxy (no SFTP)")
         with self._lock:
             sftp = self.client.open_sftp()
             try:
@@ -223,6 +137,9 @@ class SSHSession:
 
     def download_file(self, remote_path: str, local_path: str) -> None:
         """Download a file from remote server via SFTP."""
+        if self._psmp:  # pragma: no cover
+            raise RuntimeError(
+                "File transfer not supported through PSMP proxy (no SFTP)")
         with self._lock:
             sftp = self.client.open_sftp()
             try:
@@ -232,11 +149,17 @@ class SSHSession:
                 sftp.close()
 
     def is_alive(self) -> bool:
+        if self._psmp:
+            return self._psmp.is_alive()
         transport = self.client.get_transport()
         return transport is not None and transport.is_active()
 
     def close(self):
-        self.client.close()
+        if self._psmp:
+            self._psmp.close()
+            return
+        if self.client:
+            self.client.close()
 
 
 class ConnectionPool:

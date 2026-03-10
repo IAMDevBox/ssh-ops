@@ -742,6 +742,21 @@ async function clearActivePanel() {
   await fetch('/api/clear-history', { method: 'POST' });
 }
 
+// --- OTP reuse detection ---
+var _recentOtps = [];  // [{otp, ts, server}]
+
+function _checkOtpReuse(otp) {
+  var now = Date.now();
+  // Clean expired entries (older than 60s)
+  _recentOtps = _recentOtps.filter(function(e) { return now - e.ts < 60000; });
+  var match = _recentOtps.find(function(e) { return e.otp === otp; });
+  return match || null;
+}
+
+function _recordOtp(otp, server) {
+  _recentOtps.push({ otp: otp, ts: Date.now(), server: server });
+}
+
 // --- Connection state ---
 var _backendAlive = false;
 
@@ -1358,21 +1373,52 @@ async function connectSelected() {
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
 
-  // Check if any selected server needs OTP (PSMP proxy)
+  // Split selected servers into PSMP (needs OTP) and direct
   var res = await fetch('/api/servers');
   var allServers = await res.json();
-  var needsOtp = allServers.some(function(s) { return names.indexOf(s.name) !== -1 && s.needs_otp; });
+  var psmpNames = [];
+  var directNames = [];
+  names.forEach(function(name) {
+    var s = allServers.find(function(sv) { return sv.name === name; });
+    if (s && s.needs_otp) psmpNames.push(name);
+    else directNames.push(name);
+  });
 
-  var otp = null;
-  if (needsOtp) {
-    otp = await modalPrompt('PSMP Authentication', 'Enter OTP:', '', 'One-time password', { narrow: true });
-    if (!otp) return;  // user cancelled
+  // Connect direct servers in parallel (no OTP needed)
+  if (directNames.length) {
+    appendLine('Connecting to ' + directNames.join(', ') + '...');
+    await api('/api/connect', { servers: directNames });
   }
 
-  appendLine('Connecting to ' + names.join(', ') + '...');
-  var body = { servers: names };
-  if (otp) body.otp = otp;
-  await api('/api/connect', body);
+  // Connect PSMP servers one by one, each with its own OTP
+  for (var i = 0; i < psmpNames.length; i++) {
+    var label = psmpNames.length > 1
+      ? 'Enter OTP for <b>' + psmpNames[i] + '</b> (' + (i + 1) + '/' + psmpNames.length + '):'
+      : 'Enter OTP:';
+    var connected = false;
+    while (!connected) {
+      var otp = await modalPrompt('PSMP Authentication', label, '', 'One-time password', { narrow: true });
+      if (!otp) {
+        if (i < psmpNames.length - 1) appendLine('[INFO] Skipped remaining PSMP servers');
+        break;
+      }
+      // Check if this OTP was already used recently
+      var reuse = _checkOtpReuse(otp);
+      if (reuse) {
+        var ago = Math.round((Date.now() - reuse.ts) / 1000);
+        var ok = await modalConfirm('OTP Reuse Warning',
+          'This OTP was used <b>' + ago + 's ago</b> to connect <b>' + reuse.server + '</b>.<br><br>'
+          + 'OTP is single-use — reusing it will likely fail.<br><br>Continue anyway?');
+        if (!ok) continue;  // re-prompt for this server
+      }
+      _recordOtp(otp, psmpNames[i]);
+      appendLine('Connecting to ' + psmpNames[i] + '...');
+      await api('/api/connect', { servers: [psmpNames[i]], otp: otp });
+      connected = true;
+    }
+    if (!otp) break;  // user cancelled — stop connecting remaining servers
+  }
+
   setTimeout(loadServers, 1000);
 }
 

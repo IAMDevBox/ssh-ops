@@ -9,6 +9,7 @@ description = "Lightweight multi-server SSH tool with real-time web UI"
 requires-python = ">=3.11"
 dependencies = [
     "paramiko>=3.4",
+    "asyncssh>=2.14",
     "pyyaml>=6.0",
     "ruamel.yaml>=0.18",
     "fastapi>=0.115",
