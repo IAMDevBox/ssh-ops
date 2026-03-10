@@ -56,12 +56,16 @@ class SSHSession:
                 handler = logging.StreamHandler(sys.stderr)
                 handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
                 paramiko_logger.addHandler(handler)
+            otp_val = otp or ""
+            print(f"[PSMP DEBUG] host={proxy.host}:{proxy.port}", file=sys.stderr)
+            print(f"[PSMP DEBUG] user={compound_user}", file=sys.stderr)
+            print(f"[PSMP DEBUG] otp length={len(otp_val)}, empty={not otp_val}", file=sys.stderr)
             try:
                 self.client.connect(
                     hostname=proxy.host,
                     port=proxy.port,
                     username=compound_user,
-                    password=otp or "",
+                    password=otp_val,
                     look_for_keys=False,
                     allow_agent=False,
                 )
