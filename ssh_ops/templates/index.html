@@ -414,6 +414,13 @@ function _closeModal() {
   var modal = document.querySelector('.modal');
   modal.classList.remove('wide');
   modal.classList.remove('narrow');
+  // Reset OTP input styling
+  var inp = document.getElementById('modalInput');
+  inp.style.letterSpacing = '';
+  inp.style.fontFamily = '';
+  inp.style.fontSize = '';
+  inp.style.textAlign = '';
+  inp.removeAttribute('autocomplete');
 }
 
 function modalConfirm(title, bodyHtml) {
@@ -426,15 +433,42 @@ function modalConfirm(title, bodyHtml) {
   });
 }
 
+function _getModalValue(opts) {
+  var val = document.getElementById('modalInput').value;
+  return (opts && opts.otp) ? val.replace(/\s/g, '') : val;
+}
+
+function _formatOtp(input) {
+  var pos = input.selectionStart;
+  var raw = input.value.replace(/\s/g, '');
+  var formatted = raw.replace(/(.{4})(?=.)/g, '$1 ');
+  if (input.value !== formatted) {
+    var spacesBeforeCursor = (input.value.slice(0, pos).match(/ /g) || []).length;
+    input.value = formatted;
+    var newSpaces = (formatted.slice(0, pos).match(/ /g) || []).length;
+    input.selectionStart = input.selectionEnd = pos + (newSpaces - spacesBeforeCursor);
+  }
+}
+
 function modalPrompt(title, bodyHtml, defaultVal, hint, opts) {
   return new Promise(function(resolve) {
     _modalResolve = resolve;
+    var _opts = opts || {};
     _showModal(title, bodyHtml, [
       { text: 'Cancel', action: function() { _modalResolve = null; resolve(null); } },
-      { text: 'OK', cls: 'primary', action: function() { _modalResolve = null; resolve(document.getElementById('modalInput').value); } }
-    ], { value: defaultVal || '', hint: hint || '', narrow: opts && opts.narrow });
-    document.getElementById('modalInput').addEventListener('keydown', function handler(e) {
-      if (e.key === 'Enter') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(e.target.value); }
+      { text: 'OK', cls: 'primary', action: function() { _modalResolve = null; resolve(_getModalValue(_opts)); } }
+    ], { value: defaultVal || '', hint: hint || '', narrow: _opts.narrow });
+    var inp = document.getElementById('modalInput');
+    if (_opts.otp) {
+      inp.setAttribute('autocomplete', 'one-time-code');
+      inp.style.letterSpacing = '2px';
+      inp.style.fontFamily = 'monospace';
+      inp.style.fontSize = '18px';
+      inp.style.textAlign = 'center';
+      inp.addEventListener('input', function otpHandler() { _formatOtp(inp); });
+    }
+    inp.addEventListener('keydown', function handler(e) {
+      if (e.key === 'Enter') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(_getModalValue(_opts)); }
       if (e.key === 'Escape') { e.target.removeEventListener('keydown', handler); _closeModal(); _modalResolve = null; resolve(null); }
     });
   });
@@ -1422,7 +1456,7 @@ async function connectSelected() {
       : 'Enter OTP:';
     var connected = false;
     while (!connected) {
-      var otp = await modalPrompt('PSMP Authentication', label, '', 'One-time password', { narrow: true });
+      var otp = await modalPrompt('PSMP Authentication', label, '', 'One-time password', { narrow: true, otp: true });
       if (!otp) {
         // User cancelled — skip this server or stop all?
         if (i < psmpNames.length - 1) {
