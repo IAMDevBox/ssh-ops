@@ -47,10 +47,15 @@ class SSHSession:
             proxy = server.proxy
             compound_user = proxy.ssh_username(server.host)
 
-            # Password auth with OTP → PSMP proxy
-            import logging
-            logging.basicConfig(level=logging.DEBUG)
-            logging.getLogger("paramiko").setLevel(logging.DEBUG)
+            # Password auth with OTP → PSMP proxy — enable debug logging
+            import logging, sys
+            paramiko_logger = logging.getLogger("paramiko")
+            paramiko_logger.setLevel(logging.DEBUG)
+            paramiko_logger.propagate = False
+            if not paramiko_logger.handlers:
+                handler = logging.StreamHandler(sys.stderr)
+                handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
+                paramiko_logger.addHandler(handler)
             try:
                 self.client.connect(
                     hostname=proxy.host,
