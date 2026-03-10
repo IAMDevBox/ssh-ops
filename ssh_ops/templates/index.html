@@ -577,7 +577,7 @@ async function refreshLogTab(serverName) {
     var cls = colorizeLogLine(line);
     if (cls) div.classList.add(cls);
     // Wrap leading [HH:MM:SS] timestamp in <span class="ts">
-    var tsMatch = line.match(/^(\[\d{2}:\d{2}:\d{2}\]\s*)/);
+    var tsMatch = line.match(/^(\[\d{2}:\d{2}:\d{2}\] )/);
     if (tsMatch) {
       var tsSpan = document.createElement('span');
       tsSpan.className = 'ts';
