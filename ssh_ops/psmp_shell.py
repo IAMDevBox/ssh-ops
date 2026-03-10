@@ -125,14 +125,15 @@ class PsmpShell:
         output = []
         capture = False
         for line in lines:
-            clean = _ANSI_RE.sub('', line).strip()
-            if end_re.search(clean):
+            stripped = _ANSI_RE.sub('', line).strip()
+            content = _ANSI_RE.sub('', line).rstrip('\r')
+            if end_re.search(stripped):
                 break
             if capture:
-                if marker in clean:
+                if marker in stripped:
                     continue
-                output.append(clean)
-            elif start_marker in clean:
+                output.append(content)
+            elif start_marker in stripped:
                 capture = True
 
         return output, exit_code
