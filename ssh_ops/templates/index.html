@@ -1397,14 +1397,14 @@ async function connectSelected() {
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
 
-  // Split selected servers into PSMP (needs OTP) and direct
+  // Split selected servers into PSMP (needs OTP, not yet connected) and direct
   var res = await fetch('/api/servers');
   var allServers = await res.json();
   var psmpNames = [];
   var directNames = [];
   names.forEach(function(name) {
     var s = allServers.find(function(sv) { return sv.name === name; });
-    if (s && s.needs_otp) psmpNames.push(name);
+    if (s && s.needs_otp && !s.connected) psmpNames.push(name);
     else directNames.push(name);
   });
 
@@ -1559,6 +1559,9 @@ async function runSelectedTasks() {
   appendLine('Running ' + taskNames.length + ' task(s) on ' + servers.join(', ') + '...');
   var result = await api('/api/run', { servers: servers, tasks: taskNames });
   if (result.error) appendLine('[ERROR] ' + result.error);
+  // Clear task selection after run to prevent accidental re-execution
+  document.querySelectorAll('.task-cb:checked').forEach(function(cb) { cb.checked = false; });
+  updateTaskCount();
 }
 
 async function cancelTasks() {
