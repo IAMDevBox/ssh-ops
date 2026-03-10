@@ -152,7 +152,13 @@ class SSHSession:
         if self._psmp:
             return self._psmp.is_alive()
         transport = self.client.get_transport()
-        return transport is not None and transport.is_active()
+        if transport is None or not transport.is_active():
+            return False
+        try:
+            transport.send_ignore()
+            return True
+        except Exception:
+            return False
 
     def close(self):
         if self._psmp:
