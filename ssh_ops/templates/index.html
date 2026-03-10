@@ -59,6 +59,7 @@
   .task-status.skipped { color: #999; }
   .task-status.cancelled { color: #d97706; }
   @keyframes task-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .hide-progress .task-status, .hide-progress .mini-progress, .hide-progress .task-progress { display: none !important; }
   .task-progress { margin: 6px 8px; display: none; }
   .task-progress .progress-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
   .task-progress .progress-fill { height: 100%; background: #2563eb; border-radius: 3px; transition: width 0.3s; width: 0; }
@@ -265,6 +266,7 @@
       <button class="btn danger" id="btnCancel" onclick="cancelTasks()" style="display:none">&#x25a0; Cancel</button>
       <button class="btn" onclick="toggleAllTasks()">&#x2611; Select All</button>
       <button class="btn" onclick="viewTasksYaml()">{ } YAML</button>
+      <button class="btn" id="btnToggleProgress" onclick="toggleProgress(this)" title="Toggle progress display" style="font-size:11px;padding:2px 7px">&#x25F7;</button>
     </div>
     <div id="taskList"></div>
     <div class="task-progress" id="taskProgress">
@@ -1550,6 +1552,14 @@ function getSelectedTasks() {
   return Array.from(document.querySelectorAll('.task-cb:checked')).map(function(cb) { return cb.value; });
 }
 
+function toggleProgress(btn) {
+  var sidebar = document.querySelector('.sidebar');
+  sidebar.classList.toggle('hide-progress');
+  var hidden = sidebar.classList.contains('hide-progress');
+  btn.style.opacity = hidden ? '0.4' : '1';
+  try { localStorage.setItem('ssh-ops-hide-progress', hidden ? '1' : ''); } catch(e) {}
+}
+
 function toggleAllTasks() {
   var cbs = document.querySelectorAll('.task-cb');
   var allChecked = Array.from(cbs).every(function(cb) { return cb.checked; });
@@ -2434,6 +2444,10 @@ try {
   if (localStorage.getItem('ssh-ops-hide-ts')) {
     var tBtn = document.querySelector('.panel-toolbar .tbtn');
     if (tBtn) { tBtn.classList.add('active'); document.getElementById('tabPanels').classList.add('hide-ts'); }
+  }
+  if (localStorage.getItem('ssh-ops-hide-progress')) {
+    var pBtn = document.getElementById('btnToggleProgress');
+    if (pBtn) { pBtn.style.opacity = '0.4'; document.querySelector('.sidebar').classList.add('hide-progress'); }
   }
 } catch(e) {}
 setInterval(refreshServerStatus, 3000);
