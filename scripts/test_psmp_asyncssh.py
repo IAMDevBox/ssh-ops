@@ -1,26 +1,93 @@
 #!/usr/bin/env python3
 """Diagnostic: test full PSMP flow with asyncssh.
 
-Tests: auth → reason prompt → MOTD drain → exec_command → SFTP
+All commands execute through the SAME shell channel (PSMP requires this).
+Flow: auth → shell → reason prompt → MOTD drain → commands via shell
 
 Usage:
     python3 scripts/test_psmp_asyncssh.py <proxy_host> <compound_user> <otp> [reason]
 
 Example:
     python3 scripts/test_psmp_asyncssh.py proxy.example.com user@account@target myotp123
-    python3 scripts/test_psmp_asyncssh.py proxy.example.com user@account@target myotp123 "maintenance"
 """
 
 import asyncio
 import re
 import sys
 import time
+import uuid
 
 _ANSI_RE = re.compile(r'(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b\(B)')
 
 
 def _log(msg):
     print(f"[test] {msg}", file=sys.stderr, flush=True)
+
+
+async def _read_until(process, pattern, timeout=30):
+    """Read from process stdout until pattern is found. Returns all text read."""
+    buf = ""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        remaining = max(0.5, deadline - time.time())
+        try:
+            data = await asyncio.wait_for(
+                process.stdout.read(4096), timeout=min(2, remaining)
+            )
+        except asyncio.TimeoutError:
+            continue
+        if not data:
+            break
+        buf += data
+        if re.search(pattern, buf):
+            return buf
+    return buf
+
+
+async def _shell_run(process, command, timeout=30):
+    """Run a command through the shell using marker-based output capture."""
+    marker = f"__SSHOPS_{uuid.uuid4().hex[:8]}__"
+    # Send command with end marker that includes exit code
+    wrapped = f"{command}\necho {marker}_RC_$?\n"
+    process.stdin.write(wrapped)
+
+    # Read until we see the end marker
+    buf = ""
+    deadline = time.time() + timeout
+    end_pattern = re.compile(rf"{marker}_RC_(\d+)")
+    while time.time() < deadline:
+        remaining = max(0.5, deadline - time.time())
+        try:
+            data = await asyncio.wait_for(
+                process.stdout.read(4096), timeout=min(2, remaining)
+            )
+        except asyncio.TimeoutError:
+            continue
+        if not data:
+            break
+        buf += data
+        m = end_pattern.search(buf)
+        if m:
+            exit_code = int(m.group(1))
+            # Extract output between command echo and marker
+            lines = buf.split("\n")
+            output_lines = []
+            capture = False
+            for line in lines:
+                clean = _ANSI_RE.sub('', line).strip()
+                if end_pattern.search(clean):
+                    break
+                if capture:
+                    # Skip the echo of our wrapped command
+                    if marker in clean:
+                        continue
+                    output_lines.append(clean)
+                # Start capturing after the command echo
+                if command.strip() in clean and not capture:
+                    capture = True
+            return "\n".join(output_lines), exit_code
+
+    return _ANSI_RE.sub('', buf), -1
 
 
 async def test_psmp(proxy_host, compound_user, otp, reason="test"):
@@ -44,95 +111,43 @@ async def test_psmp(proxy_host, compound_user, otp, reason="test"):
     )
     _log(f"Step 1: Auth succeeded ({time.time()-t0:.1f}s)")
 
-    # ── Step 2: Handle reason prompt via shell ──
+    # ── Step 2: Open shell + handle reason prompt ──
     _log("Step 2: Opening shell for reason prompt...")
     process = await conn.create_process(
         term_type="xterm", request_pty=True
     )
 
-    # Read until "reason" appears, then send reason
-    buf = ""
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        try:
-            data = await asyncio.wait_for(
-                process.stdout.read(4096), timeout=2
-            )
-        except asyncio.TimeoutError:
-            continue
-        if not data:
-            break
-        buf += data
-        _log(f"  shell recv: {_ANSI_RE.sub('', data).strip()!r}")
-        if "reason" in buf.lower():
-            process.stdin.write(reason + "\n")
-            _log(f"  sent reason: {reason}")
-            break
-    else:
+    buf = await _read_until(process, r"(?i)reason", timeout=30)
+    _log(f"  received prompt ({len(buf)} chars)")
+    if "reason" not in buf.lower():
         _log("ERROR: Timeout waiting for reason prompt")
         conn.close()
         return
+    process.stdin.write(reason + "\n")
+    _log(f"  sent reason: {reason}")
 
     # ── Step 3: Drain MOTD — wait for shell prompt ($ or #) ──
     _log("Step 3: Draining MOTD...")
-    motd_buf = ""
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        try:
-            data = await asyncio.wait_for(
-                process.stdout.read(4096), timeout=2
-            )
-        except asyncio.TimeoutError:
-            # No more data, check if we already have a prompt
-            stripped = _ANSI_RE.sub('', motd_buf).rstrip()
-            if stripped and (stripped.endswith('$') or stripped.endswith('#')):
-                break
-            continue
-        if not data:
-            break
-        motd_buf += data
-        stripped = _ANSI_RE.sub('', motd_buf).rstrip()
-        if stripped and (stripped.endswith('$') or stripped.endswith('#')):
-            break
+    motd = await _read_until(process, r"[$#]\s*$", timeout=15)
+    motd_clean = _ANSI_RE.sub('', motd).strip()
+    _log(f"Step 3: MOTD ({len(motd_clean)} chars)")
+    for line in motd_clean.split('\n')[:5]:
+        if line.strip():
+            _log(f"  | {line.strip()}")
 
-    motd_clean = _ANSI_RE.sub('', motd_buf).strip()
-    _log(f"Step 3: MOTD ({len(motd_clean)} chars): {motd_clean[:200]}")
-
-    # Close shell channel
-    process.stdin.write_eof()
-    process.close()
-
-    # ── Step 4: Test exec_command ──
-    _log("Step 4: Testing exec_command (hostname)...")
-    try:
-        result = await conn.run("hostname", check=False, timeout=10)
-        _log(f"  stdout: {result.stdout.strip()!r}")
-        _log(f"  stderr: {result.stderr.strip()!r}")
-        _log(f"  exit: {result.exit_status}")
-    except Exception as e:
-        _log(f"  exec_command failed: {type(e).__name__}: {e}")
-
-    # ── Step 5: Test another command ──
-    _log("Step 5: Testing exec_command (whoami)...")
-    try:
-        result = await conn.run("whoami", check=False, timeout=10)
-        _log(f"  stdout: {result.stdout.strip()!r}")
-        _log(f"  exit: {result.exit_status}")
-    except Exception as e:
-        _log(f"  exec_command failed: {type(e).__name__}: {e}")
-
-    # ── Step 6: Test SFTP ──
-    _log("Step 6: Testing SFTP (list /tmp)...")
-    try:
-        async with conn.start_sftp_client() as sftp:
-            entries = await sftp.listdir("/tmp")
-            _log(f"  /tmp has {len(entries)} entries")
-    except Exception as e:
-        _log(f"  SFTP failed: {type(e).__name__}: {e}")
+    # ── Step 4: Run commands through SAME shell ──
+    test_commands = ["hostname", "whoami", "uptime", "df -h /"]
+    for cmd in test_commands:
+        _log(f"Step 4: shell run: {cmd}")
+        output, exit_code = await _shell_run(process, cmd, timeout=15)
+        _log(f"  output: {output.strip()!r}")
+        _log(f"  exit: {exit_code}")
 
     # ── Done ──
     dt = time.time() - t0
     _log(f"All steps completed ({dt:.1f}s)")
+    process.stdin.write_eof()
+    process.close()
     conn.close()
 
 
