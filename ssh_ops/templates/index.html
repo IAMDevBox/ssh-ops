@@ -751,7 +751,7 @@ function _buildLineContent(div, text) {
   var tsSpan = document.createElement('span');
   tsSpan.className = 'ts';
   tsSpan.textContent = '[' + timeStr() + '] ';
-  var m = text.match(/^\[([^\]]+)\]\s*/);
+  var m = text.match(/^\[([^\]]+)\] /);
   if (m && !text.includes('[ERROR]') && !text.includes('[WARN]')) {
     var serverName = m[1];
     var rest = text.slice(m[0].length);
