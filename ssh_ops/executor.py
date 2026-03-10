@@ -121,8 +121,8 @@ class SSHSession:
                     mode: str | int | None = None) -> None:
         """Upload a local file to remote server via SFTP."""
         if self._psmp:  # pragma: no cover
-            raise RuntimeError(
-                "File transfer not supported through PSMP proxy (no SFTP)")
+            self._psmp.upload_file(local_path, remote_path, mode)
+            return
         with self._lock:
             sftp = self.client.open_sftp()
             try:
@@ -138,8 +138,8 @@ class SSHSession:
     def download_file(self, remote_path: str, local_path: str) -> None:
         """Download a file from remote server via SFTP."""
         if self._psmp:  # pragma: no cover
-            raise RuntimeError(
-                "File transfer not supported through PSMP proxy (no SFTP)")
+            self._psmp.download_file(remote_path, local_path)
+            return
         with self._lock:
             sftp = self.client.open_sftp()
             try:
@@ -322,6 +322,7 @@ class TaskExecutor:
             return False
 
         remote_tmp = f"/tmp/_ssh_ops_{Path(src).name}"
+
         session.upload_file(src, remote_tmp, "0755")
 
         cmd = _shell_quote(remote_tmp)

@@ -160,6 +160,35 @@ class PsmpShell:
             yield line
         return exit_code
 
+    def upload_file(self, local_path: str, remote_path: str,
+                    mode: str | int | None = None) -> None:
+        """Upload file via SFTP over the existing PSMP connection."""
+        async def _upload():
+            async with self._conn.start_sftp_client() as sftp:
+                await sftp.put(local_path, remote_path)
+                if mode is not None:
+                    if isinstance(mode, int):
+                        await sftp.chmod(remote_path, mode)
+                    else:
+                        await sftp.chmod(remote_path, int(str(mode), 8))
+
+        with self._cmd_lock:
+            future = asyncio.run_coroutine_threadsafe(_upload(), self._loop)
+            future.result(timeout=120)
+
+    def download_file(self, remote_path: str, local_path: str) -> None:
+        """Download file via SFTP over the existing PSMP connection."""
+        from pathlib import Path
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+
+        async def _download():
+            async with self._conn.start_sftp_client() as sftp:
+                await sftp.get(remote_path, local_path)
+
+        with self._cmd_lock:
+            future = asyncio.run_coroutine_threadsafe(_download(), self._loop)
+            future.result(timeout=120)
+
     def is_alive(self) -> bool:
         if not self._conn or not self._process:
             return False
