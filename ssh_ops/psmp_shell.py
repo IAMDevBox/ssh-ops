@@ -90,13 +90,15 @@ class PsmpShell:
     async def _async_run(self, command: str, timeout: int = 120) -> tuple:
         """Run command via shell, return (lines, exit_code)."""
         marker = f"__SSHOPS_{uuid.uuid4().hex[:8]}__"
-        # Leading space avoids bash history; echo marker captures exit code
+        start_marker = f"{marker}_START"
+        end_marker = f"{marker}_RC_"
+        # Leading space avoids bash history; start/end markers bracket the output
         self._process.stdin.write(
-            f" {command}\necho {marker}_RC_$?\n"
+            f" echo {start_marker}\n{command}\necho {end_marker}$?\n"
         )
 
         buf = ""
-        end_re = re.compile(rf"{marker}_RC_(\d+)")
+        end_re = re.compile(rf"{re.escape(end_marker)}(\d+)")
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
             remaining = max(0.5, deadline - asyncio.get_event_loop().time())
@@ -115,7 +117,7 @@ class PsmpShell:
             if end_re.search(buf):
                 break
 
-        # Parse output
+        # Parse output — capture lines between start and end markers
         m = end_re.search(buf)
         exit_code = int(m.group(1)) if m else -1
 
@@ -130,7 +132,7 @@ class PsmpShell:
                 if marker in clean:
                     continue
                 output.append(clean)
-            if command.strip() in clean and not capture:
+            elif start_marker in clean:
                 capture = True
 
         return output, exit_code
