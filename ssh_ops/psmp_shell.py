@@ -162,32 +162,54 @@ class PsmpShell:
 
     def upload_file(self, local_path: str, remote_path: str,
                     mode: str | int | None = None) -> None:
-        """Upload file via SFTP over the existing PSMP connection."""
-        async def _upload():
-            async with self._conn.start_sftp_client() as sftp:
-                await sftp.put(local_path, remote_path)
-                if mode is not None:
-                    if isinstance(mode, int):
-                        await sftp.chmod(remote_path, mode)
-                    else:
-                        await sftp.chmod(remote_path, int(str(mode), 8))
+        """Upload file via base64-encoded shell transfer (PSMP blocks SFTP on shared connection)."""
+        import base64
+        from pathlib import Path
 
+        data = Path(local_path).read_bytes()
+        b64 = base64.b64encode(data).decode('ascii')
+
+        # Split into chunks to avoid shell line length limits
+        chunk_size = 4096
+        chunks = [b64[i:i + chunk_size] for i in range(0, len(b64), chunk_size)]
+
+        # Write base64 chunks to temp file, then decode to destination
+        tmp_b64 = remote_path + '._b64tmp'
+        cmds = [f"rm -f {tmp_b64}"]
+        for chunk in chunks:
+            cmds.append(f"printf '%s' '{chunk}' >> {tmp_b64}")
+        cmds.append(f"base64 -d {tmp_b64} > {remote_path}")
+        cmds.append(f"rm -f {tmp_b64}")
+        if mode is not None:
+            mode_str = str(mode) if isinstance(mode, int) else mode
+            cmds.append(f"chmod {mode_str} {remote_path}")
+
+        full_cmd = " && ".join(cmds)
         with self._cmd_lock:
-            future = asyncio.run_coroutine_threadsafe(_upload(), self._loop)
-            future.result(timeout=120)
+            future = asyncio.run_coroutine_threadsafe(
+                self._async_run(full_cmd, timeout=120), self._loop)
+            _, exit_code = future.result(timeout=130)
+            if exit_code != 0:
+                raise RuntimeError(
+                    f"Upload failed (exit={exit_code}): {local_path} -> {remote_path}")
 
     def download_file(self, remote_path: str, local_path: str) -> None:
-        """Download file via SFTP over the existing PSMP connection."""
+        """Download file via base64-encoded shell transfer."""
+        import base64
         from pathlib import Path
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
 
-        async def _download():
-            async with self._conn.start_sftp_client() as sftp:
-                await sftp.get(remote_path, local_path)
-
+        cmd = f"base64 {remote_path}"
         with self._cmd_lock:
-            future = asyncio.run_coroutine_threadsafe(_download(), self._loop)
-            future.result(timeout=120)
+            future = asyncio.run_coroutine_threadsafe(
+                self._async_run(cmd, timeout=120), self._loop)
+            lines, exit_code = future.result(timeout=130)
+            if exit_code != 0:
+                raise RuntimeError(
+                    f"Download failed (exit={exit_code}): {remote_path}")
+
+        b64_text = "".join(line.strip() for line in lines)
+        Path(local_path).write_bytes(base64.b64decode(b64_text))
 
     def is_alive(self) -> bool:
         if not self._conn or not self._process:
