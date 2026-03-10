@@ -77,7 +77,7 @@ class SSHSession:
                      env: dict | None = None) -> Generator[str, None, int]:
         """Execute command and yield output lines. Returns exit code via StopIteration."""
         if self._psmp:  # pragma: no cover
-            return self._psmp.run_command(command, timeout, env)
+            return (yield from self._psmp.run_command(command, timeout, env))
 
         # Direct path — paramiko exec_command
         with self._lock:
