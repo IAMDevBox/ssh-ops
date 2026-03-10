@@ -101,7 +101,8 @@
   .tab-panel .line { white-space: pre-wrap; word-break: break-all; }
   .tab-panel .cmd-input { background: #eef2ff; border-left: 3px solid #2563eb; padding: 4px 10px; margin: 8px 0 0 0; font-weight: bold; color: #1e40af; }
   .tab-panel .output-block { background: #f8f8f8; border-left: 3px solid #d1d5db; padding: 6px 10px; margin: 0 0 4px 0; position: relative; white-space: pre-wrap; word-break: break-all; }
-  .tab-panel .output-block .copy-out { position: sticky; float: right; top: 4px; display: none; padding: 0 6px; font-size: 10px; color: #888; background: #fff; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; line-height: 1.6; z-index: 1; }
+  .tab-panel .output-block .copy-out { position: absolute; right: 4px; top: 4px; display: none; padding: 0 6px; font-size: 10px; color: #888; background: #fff; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; line-height: 1.6; z-index: 1; }
+  .tab-panel .output-block .copy-out.bottom { top: auto; bottom: 4px; }
   .tab-panel .output-block:hover .copy-out { display: inline-block; }
   .tab-panel .output-block .copy-out:hover { color: #2563eb; border-color: #2563eb; }
   .tab-panel .output-block .copy-out.copied { display: inline-block; color: #16a34a; border-color: #16a34a; }
@@ -703,13 +704,46 @@ function _classifyLine(text) {
   return 'info';
 }
 
+function _makeCopyBtn(isBottom) {
+  var btn = document.createElement('span');
+  btn.className = 'copy-out' + (isBottom ? ' bottom' : '');
+  btn.textContent = '\u2398';
+  btn.onclick = function(e) {
+    e.stopPropagation();
+    var block = btn.closest('.output-block');
+    var lines = [];
+    block.querySelectorAll('.out-line').forEach(function(el) { lines.push(_lineText(el)); });
+    navigator.clipboard.writeText(lines.join('\n')).then(function() {
+      block.querySelectorAll('.copy-out').forEach(function(b) {
+        b.textContent = '\u2713'; b.classList.add('copied');
+      });
+      setTimeout(function() {
+        block.querySelectorAll('.copy-out').forEach(function(b) {
+          b.textContent = '\u2398'; b.classList.remove('copied');
+        });
+      }, 2000);
+    });
+  };
+  return btn;
+}
+
+function _closeOutputBlock() {
+  if (!_currentOutputBlock) return;
+  // Add bottom copy button if block has many lines
+  var lineCount = _currentOutputBlock.querySelectorAll('.out-line').length;
+  if (lineCount > 10) {
+    _currentOutputBlock.appendChild(_makeCopyBtn(true));
+  }
+  _currentOutputBlock = null;
+}
+
 function appendLine(text) {
   var panel = document.getElementById('panel-main');
   var cls = _classifyLine(text);
 
   // Non-output line → close current output block
   if (cls !== 'output' && _currentOutputBlock) {
-    _currentOutputBlock = null;
+    _closeOutputBlock();
   }
 
   if (cls === 'output') {
@@ -717,21 +751,7 @@ function appendLine(text) {
     if (!_currentOutputBlock) {
       _currentOutputBlock = document.createElement('div');
       _currentOutputBlock.className = 'line output-block';
-      var copyBtn = document.createElement('span');
-      copyBtn.className = 'copy-out';
-      copyBtn.textContent = '\u2398';
-      copyBtn.onclick = function(e) {
-        e.stopPropagation();
-        var block = copyBtn.parentElement;
-        var lines = [];
-        block.querySelectorAll('.out-line').forEach(function(el) { lines.push(_lineText(el)); });
-        navigator.clipboard.writeText(lines.join('\n')).then(function() {
-          copyBtn.textContent = '\u2713';
-          copyBtn.classList.add('copied');
-          setTimeout(function() { copyBtn.textContent = '\u2398'; copyBtn.classList.remove('copied'); }, 2000);
-        });
-      };
-      _currentOutputBlock.appendChild(copyBtn);
+      _currentOutputBlock.appendChild(_makeCopyBtn());
       panel.appendChild(_currentOutputBlock);
     }
     // Add line inside output block
