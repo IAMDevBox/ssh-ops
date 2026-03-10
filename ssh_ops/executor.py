@@ -48,7 +48,7 @@ class SSHSession:
             compound_user = proxy.ssh_username(server.host)
 
             # Enable Paramiko debug logging
-            import logging, sys, socket as _socket
+            import logging, sys
             paramiko_logger = logging.getLogger("paramiko")
             paramiko_logger.setLevel(logging.DEBUG)
             paramiko_logger.propagate = False
@@ -58,66 +58,46 @@ class SSHSession:
                 paramiko_logger.addHandler(_handler)
 
             otp_val = otp or ""
+            _t0 = time.time()
             print(f"[PSMP DEBUG] host={proxy.host}:{proxy.port}", file=sys.stderr)
             print(f"[PSMP DEBUG] user={compound_user}", file=sys.stderr)
-            print(f"[PSMP DEBUG] otp length={len(otp_val)}, empty={not otp_val}", file=sys.stderr)
+            print(f"[PSMP DEBUG] otp length={len(otp_val)}, empty={not otp_val}",
+                  file=sys.stderr)
+            if otp_val:
+                print(f"[PSMP DEBUG] otp first/last char: "
+                      f"{otp_val[0]}...{otp_val[-1]}", file=sys.stderr)
 
             try:
-                # Low-level Transport API: control version string before KEX
-                sock = _socket.create_connection(
-                    (proxy.host, proxy.port), timeout=30
+                # SSHClient.connect() with OpenSSH version string
+                # Uses standard auth flow (none probe → password), matching PuTTY
+                class _OpenSSHTransport(paramiko.Transport):
+                    def __init__(self, *args, **kwargs):
+                        super().__init__(*args, **kwargs)
+                        self.local_version = "SSH-2.0-OpenSSH_8.9"
+
+                print("[PSMP DEBUG] SSHClient.connect + OpenSSH version",
+                      file=sys.stderr)
+                self.client.connect(
+                    hostname=proxy.host,
+                    port=proxy.port,
+                    username=compound_user,
+                    password=otp_val,
+                    look_for_keys=False,
+                    allow_agent=False,
+                    transport_factory=_OpenSSHTransport,
                 )
-                transport = paramiko.Transport(sock)
-
-                # Spoof as OpenSSH — some proxies reject non-standard clients
-                transport.local_version = "SSH-2.0-OpenSSH_8.9"
-                print("[PSMP DEBUG] version string: SSH-2.0-OpenSSH_8.9", file=sys.stderr)
-
-                transport.connect()  # KEX handshake
-                print("[PSMP DEBUG] KEX complete, starting auth", file=sys.stderr)
-
-                # Strategy 1: password auth (matches PuTTY's observed behavior)
-                auth_ok = False
-                try:
-                    transport.auth_password(compound_user, otp_val)
-                    auth_ok = True
-                    print("[PSMP DEBUG] password auth succeeded", file=sys.stderr)
-                except paramiko.AuthenticationException as pw_err:
-                    print(f"[PSMP DEBUG] password auth failed: {pw_err}", file=sys.stderr)
-
-                    # Strategy 2: keyboard-interactive with OTP
-                    print("[PSMP DEBUG] trying keyboard-interactive...", file=sys.stderr)
-                    try:
-                        def _ki_handler(title, instructions, prompt_list):
-                            print(f"[PSMP DEBUG] KI title={title!r}, "
-                                  f"instructions={instructions!r}, "
-                                  f"prompts={[p for p,_ in prompt_list]}",
-                                  file=sys.stderr)
-                            return [otp_val] * len(prompt_list)
-
-                        transport.auth_interactive(compound_user, _ki_handler)
-                        auth_ok = True
-                        print("[PSMP DEBUG] keyboard-interactive auth succeeded",
-                              file=sys.stderr)
-                    except paramiko.AuthenticationException as ki_err:
-                        print(f"[PSMP DEBUG] keyboard-interactive failed: {ki_err}",
-                              file=sys.stderr)
-
-                if not auth_ok:
-                    transport.close()
-                    raise paramiko.AuthenticationException(
-                        "All auth methods failed (password + keyboard-interactive)"
-                    )
-
-                # Attach transport to SSHClient for subsequent operations
-                self.client._transport = transport
-            except paramiko.AuthenticationException:
-                raise
+                _dt = time.time() - _t0
+                print(f"[PSMP DEBUG] auth succeeded ({_dt:.1f}s)",
+                      file=sys.stderr)
             except Exception as e:
+                _dt = time.time() - _t0
+                print(f"[PSMP DEBUG] auth failed ({_dt:.1f}s): "
+                      f"{type(e).__name__}: {e}", file=sys.stderr)
                 raise RuntimeError(
                     f"PSMP auth failed: {type(e).__name__}: {e}\n"
                     f"  proxy={proxy.host}:{proxy.port}\n"
-                    f"  username={compound_user}"
+                    f"  username={compound_user}\n"
+                    f"  otp_length={len(otp_val)}, elapsed={_dt:.1f}s"
                 ) from e
 
             # Handle reason prompt via a temporary shell channel
