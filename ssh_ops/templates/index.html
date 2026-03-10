@@ -742,19 +742,43 @@ async function clearActivePanel() {
   await fetch('/api/clear-history', { method: 'POST' });
 }
 
-// --- OTP reuse detection ---
-var _recentOtps = [];  // [{otp, ts, server}]
+// --- OTP reuse detection (shared across tabs via localStorage) ---
+var _OTP_STORAGE_KEY = 'ssh_ops_recent_otps';
+
+function _hashOtp(otp) {
+  // Simple hash for equality check — not cryptographic, just avoids storing plaintext
+  var h = 0;
+  for (var i = 0; i < otp.length; i++) {
+    h = ((h << 5) - h + otp.charCodeAt(i)) | 0;
+  }
+  return 'h' + (h >>> 0).toString(36);
+}
+
+function _loadRecentOtps() {
+  try {
+    var raw = localStorage.getItem(_OTP_STORAGE_KEY);
+    if (!raw) return [];
+    var entries = JSON.parse(raw);
+    var now = Date.now();
+    return entries.filter(function(e) { return now - e.ts < 60000; });
+  } catch (_) { return []; }
+}
+
+function _saveRecentOtps(entries) {
+  try { localStorage.setItem(_OTP_STORAGE_KEY, JSON.stringify(entries)); } catch (_) {}
+}
 
 function _checkOtpReuse(otp) {
-  var now = Date.now();
-  // Clean expired entries (older than 60s)
-  _recentOtps = _recentOtps.filter(function(e) { return now - e.ts < 60000; });
-  var match = _recentOtps.find(function(e) { return e.otp === otp; });
+  var entries = _loadRecentOtps();
+  var hash = _hashOtp(otp);
+  var match = entries.find(function(e) { return e.hash === hash; });
   return match || null;
 }
 
 function _recordOtp(otp, server) {
-  _recentOtps.push({ otp: otp, ts: Date.now(), server: server });
+  var entries = _loadRecentOtps();
+  entries.push({ hash: _hashOtp(otp), ts: Date.now(), server: server });
+  _saveRecentOtps(entries);
 }
 
 // --- Connection state ---
