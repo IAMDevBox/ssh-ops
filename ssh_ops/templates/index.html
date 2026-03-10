@@ -266,7 +266,7 @@
       <button class="btn danger" id="btnCancel" onclick="cancelTasks()" style="display:none">&#x25a0; Cancel</button>
       <button class="btn" onclick="toggleAllTasks()">&#x2611; Select All</button>
       <button class="btn" onclick="viewTasksYaml()">{ } YAML</button>
-      <button class="btn" id="btnToggleProgress" onclick="toggleProgress(this)" title="Toggle progress display" style="font-size:11px;padding:2px 7px">&#x25F7;</button>
+      <button class="btn" id="btnToggleProgress" onclick="toggleProgress(this)" title="Toggle progress display" style="font-size:11px;padding:2px 7px">Progress ON</button>
     </div>
     <div id="taskList"></div>
     <div class="task-progress" id="taskProgress">
@@ -1556,7 +1556,7 @@ function toggleProgress(btn) {
   var sidebar = document.querySelector('.sidebar');
   sidebar.classList.toggle('hide-progress');
   var hidden = sidebar.classList.contains('hide-progress');
-  btn.style.opacity = hidden ? '0.4' : '1';
+  btn.textContent = hidden ? 'Progress OFF' : 'Progress ON';
   try { localStorage.setItem('ssh-ops-hide-progress', hidden ? '1' : ''); } catch(e) {}
 }
 
@@ -2447,7 +2447,7 @@ try {
   }
   if (localStorage.getItem('ssh-ops-hide-progress')) {
     var pBtn = document.getElementById('btnToggleProgress');
-    if (pBtn) { pBtn.style.opacity = '0.4'; document.querySelector('.sidebar').classList.add('hide-progress'); }
+    if (pBtn) { pBtn.textContent = 'Progress OFF'; document.querySelector('.sidebar').classList.add('hide-progress'); }
   }
 } catch(e) {}
 setInterval(refreshServerStatus, 3000);
