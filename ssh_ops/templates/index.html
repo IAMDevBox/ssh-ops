@@ -758,7 +758,18 @@ function appendLine(text) {
     var outLine = document.createElement('div');
     outLine.className = 'out-line';
     _buildLineContent(outLine, text);
-    _currentOutputBlock.appendChild(outLine);
+    // Insert before bottom copy button if it exists, otherwise just append
+    var bottomBtn = _currentOutputBlock.querySelector('.copy-out.bottom');
+    if (bottomBtn) {
+      _currentOutputBlock.insertBefore(outLine, bottomBtn);
+    } else {
+      _currentOutputBlock.appendChild(outLine);
+    }
+    // Add/remove bottom copy button based on line count
+    var lineCount = _currentOutputBlock.querySelectorAll('.out-line').length;
+    if (lineCount > 10 && !bottomBtn) {
+      _currentOutputBlock.appendChild(_makeCopyBtn(true));
+    }
   } else {
     var div = document.createElement('div');
     div.className = 'line ' + cls;
