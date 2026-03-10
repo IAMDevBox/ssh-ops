@@ -280,6 +280,7 @@
       <div class="panel-toolbar">
         <button class="tbtn" onclick="toggleTimestamps(this)" title="Hide timestamps and prefixes">T</button>
         <button class="tbtn" onclick="copyLines('output')" title="Copy all output">&#x2398; All</button>
+        <button class="tbtn" onclick="scrollToBottom()" title="Scroll to bottom">&#x21E9;</button>
         <button class="tbtn danger" onclick="clearActivePanel()" title="Clear" id="clearPanelBtn">&#x2715; Clear</button>
       </div>
       <div class="tab-panel active" id="panel-main"></div>
@@ -769,6 +770,11 @@ function _buildLineContent(div, text) {
     if (ansiFrag2) div.appendChild(ansiFrag2);
     else div.appendChild(document.createTextNode(text));
   }
+}
+
+function scrollToBottom() {
+  var panel = document.querySelector('.tab-panel.active');
+  if (panel) panel.scrollTop = panel.scrollHeight;
 }
 
 async function clearActivePanel() {
