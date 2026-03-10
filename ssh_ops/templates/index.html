@@ -1391,7 +1391,8 @@ async function connectSelected() {
   }
 
   // Connect PSMP servers one by one, each with its own OTP
-  for (var i = 0; i < psmpNames.length; i++) {
+  var psmpAborted = false;
+  for (var i = 0; i < psmpNames.length && !psmpAborted; i++) {
     var label = psmpNames.length > 1
       ? 'Enter OTP for <b>' + psmpNames[i] + '</b> (' + (i + 1) + '/' + psmpNames.length + '):'
       : 'Enter OTP:';
@@ -1399,7 +1400,13 @@ async function connectSelected() {
     while (!connected) {
       var otp = await modalPrompt('PSMP Authentication', label, '', 'One-time password', { narrow: true });
       if (!otp) {
-        if (i < psmpNames.length - 1) appendLine('[INFO] Skipped remaining PSMP servers');
+        // User cancelled — skip this server or stop all?
+        if (i < psmpNames.length - 1) {
+          var skipAll = await modalConfirm('Skip Server',
+            'Skip <b>' + psmpNames[i] + '</b> and continue to next server?<br><br>'
+            + 'Choose <b>OK</b> to skip this one, or <b>Cancel</b> to stop all.');
+          if (!skipAll) psmpAborted = true;
+        }
         break;
       }
       // Check if this OTP was already used recently
@@ -1413,10 +1420,17 @@ async function connectSelected() {
       }
       _recordOtp(otp, psmpNames[i]);
       appendLine('Connecting to ' + psmpNames[i] + '...');
-      await api('/api/connect', { servers: [psmpNames[i]], otp: otp });
+      var result = await api('/api/connect', { servers: [psmpNames[i]], otp: otp });
+      // Check if connection succeeded
+      var status = result && result[psmpNames[i]];
+      if (status && status.indexOf('error') === 0) {
+        var retry = await modalConfirm('Connection Failed',
+          '<b>' + psmpNames[i] + '</b>: ' + status + '<br><br>Retry with a new OTP?');
+        if (retry) continue;  // re-prompt OTP
+        break;  // skip this server
+      }
       connected = true;
     }
-    if (!otp) break;  // user cancelled — stop connecting remaining servers
   }
 
   setTimeout(loadServers, 1000);
