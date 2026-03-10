@@ -1101,7 +1101,7 @@ function updateTaskProgress(data) {
   if (btnCancel) {
     btnCancel.style.display = data.running ? '' : 'none';
     if (data.cancelling) { btnCancel.disabled = true; btnCancel.textContent = '⏳ Cancelling...'; }
-    else if (!data.running) { btnCancel.disabled = false; btnCancel.innerHTML = '&#x25a0; Cancel'; }
+    else { btnCancel.disabled = false; btnCancel.innerHTML = '&#x25a0; Cancel'; }
   }
 
   var totalAll = serverNames.length * taskNames.length;

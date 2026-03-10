@@ -49,6 +49,7 @@ class SSHSession:
 
             # Password auth with OTP → PSMP proxy
             import logging
+            logging.basicConfig(level=logging.DEBUG)
             logging.getLogger("paramiko").setLevel(logging.DEBUG)
             try:
                 self.client.connect(
