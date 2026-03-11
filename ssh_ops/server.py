@@ -72,12 +72,34 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
     _load_history()
     _main_loop: asyncio.AbstractEventLoop | None = None
+    _last_server_status: dict[str, bool] = {}
+
+    def _get_server_status() -> dict[str, bool]:
+        connected = set(pool.connected_servers())
+        return {s.name: s.name in connected for s in config.servers}
+
+    async def _broadcast_server_status():
+        status = _get_server_status()
+        if status != _last_server_status:
+            _last_server_status.clear()
+            _last_server_status.update(status)
+            await _broadcast(json.dumps({"type": "server_status", "servers": status}))
+
+    async def _server_status_monitor():  # pragma: no cover
+        while True:
+            await asyncio.sleep(5)
+            try:
+                await _broadcast_server_status()
+            except Exception:
+                pass
 
     @asynccontextmanager
     async def lifespan(_app):  # pragma: no cover — triggered by real server, not TestClient
         nonlocal _main_loop
         _main_loop = asyncio.get_running_loop()
+        task = asyncio.create_task(_server_status_monitor())
         yield
+        task.cancel()
 
     app = FastAPI(title="SSH Ops Tool", lifespan=lifespan)
 
@@ -791,6 +813,7 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                             await _broadcast(f"[{server.name}] {line}")
             else:
                 await _broadcast(f"[{server.name}] Connection failed: {msg}")
+        await _broadcast_server_status()
         return results
 
     @app.post("/api/disconnect")
@@ -798,11 +821,13 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if body.get("all"):
             pool.disconnect_all()
             await _broadcast("All connections closed")
+            await _broadcast_server_status()
             return {"status": "all disconnected"}
 
         for name in body.get("servers", []):
             pool.disconnect(name)
             await _broadcast(f"[{name}] Disconnected")
+        await _broadcast_server_status()
         return {"status": "ok"}
 
     @app.post("/api/dry-run")
@@ -1024,6 +1049,10 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             except Exception:  # pragma: no cover — client disconnected during history replay
                 return
         ws_clients.add(ws)
+        try:
+            await ws.send_text(json.dumps({"type": "server_status", "servers": _get_server_status()}))
+        except Exception:  # pragma: no cover
+            pass
         try:
             while True:
                 await ws.receive_text()  # Keep connection alive

@@ -890,7 +890,11 @@ function connectWS() {
   ws.onmessage = function(e) {
     var d = e.data;
     if (d.charAt(0) === '{') {
-      try { var msg = JSON.parse(d); if (msg.type === 'progress') { updateTaskProgress(msg); return; } } catch(_) {}
+      try {
+        var msg = JSON.parse(d);
+        if (msg.type === 'progress') { updateTaskProgress(msg); return; }
+        if (msg.type === 'server_status') { _updateServerDots(msg.servers); return; }
+      } catch(_) {}
     }
     appendLine(d);
   };
@@ -1031,9 +1035,13 @@ async function loadServers() {
     var label = document.createElement('span');
     label.className = 'server-label';
     label.textContent = s.name;
-    if (s.name !== s.host) div.title = s.host + ':' + s.port + ' (' + s.username + ') — double-click to change password';
-    else div.title = 'Double-click to change password';
-    label.addEventListener('dblclick', function(e) { e.stopPropagation(); editServerPassword(idx, s.name); });
+    if (s.needs_otp) {
+      div.title = s.name !== s.host ? s.host + ':' + s.port + ' (' + s.username + ') — PSMP proxy' : 'PSMP proxy';
+    } else {
+      if (s.name !== s.host) div.title = s.host + ':' + s.port + ' (' + s.username + ') — double-click to change password';
+      else div.title = 'Double-click to change password';
+      label.addEventListener('dblclick', function(e) { e.stopPropagation(); editServerPassword(idx, s.name); });
+    }
 
     var logBtn = document.createElement('button');
     logBtn.className = 'log-btn';
@@ -2414,21 +2422,19 @@ async function editServerPassword(index, name) {
   }
 })();
 
-// --- Server status polling ---
-async function refreshServerStatus() {
-  try {
-    var res = await fetch('/api/servers');
-    var servers = await res.json();
-    var list = document.getElementById('serverList');
-    var items = list.querySelectorAll('.server-item');
-    if (items.length !== servers.length) { loadServers(); return; }
-    servers.forEach(function(s, i) {
-      var dot = items[i].querySelector('.dot');
-      if (dot) {
-        dot.classList.toggle('connected', s.connected);
-      }
-    });
-  } catch (e) { /* ignore fetch errors */ }
+// --- Server status via WebSocket ---
+function _updateServerDots(statusMap) {
+  var list = document.getElementById('serverList');
+  var items = list.querySelectorAll('.server-item');
+  items.forEach(function(item) {
+    var label = item.querySelector('.server-label');
+    if (!label) return;
+    var name = label.textContent;
+    if (name in statusMap) {
+      var dot = item.querySelector('.dot');
+      if (dot) dot.classList.toggle('connected', statusMap[name]);
+    }
+  });
 }
 
 // --- Init ---
@@ -2449,7 +2455,6 @@ try {
     if (pBtn) { pBtn.innerHTML = 'P &#x2717;'; document.body.classList.add('hide-progress'); }
   }
 } catch(e) {}
-setInterval(refreshServerStatus, 3000);
 </script>
 </body>
 </html>
