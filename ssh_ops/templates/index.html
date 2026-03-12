@@ -2333,10 +2333,16 @@ async function openFileEditor(serverNames, filePath) {
   setTimeout(function() { _fePanes.forEach(function(p) { p.editor.refresh(); }); if (_fePanes[0]) _fePanes[0].editor.focus(); }, 50);
 }
 
-async function _feSavePane(serverName) {
+async function _feSavePane(serverName, skipConfirm) {
   var pane = _fePanes.find(function(p) { return p.server === serverName; });
   if (!pane) return;
   var content = pane.editor.getValue();
+  if (content === pane.original) return;
+  if (!skipConfirm) {
+    var ok = await modalConfirm('Confirm Save',
+      'Save <code>' + _escAttr(_fePath) + '</code> on <b>' + _escAttr(serverName) + '</b>?');
+    if (!ok) return;
+  }
   var result = await api('/api/write-file', { server: serverName, path: _fePath, content: content });
   if (result.error) {
     appendLine('[ERROR] [' + serverName + '] Save failed: ' + result.error);
@@ -2354,8 +2360,13 @@ async function _feSavePane(serverName) {
 async function _feSaveAll() {
   var modified = _fePanes.filter(function(p) { return p.editor.getValue() !== p.original; });
   if (!modified.length) return;
+  var names = modified.map(function(p) { return p.server; });
+  var ok = await modalConfirm('Confirm Save All',
+    'Save <code>' + _escAttr(_fePath) + '</code> on <b>' + names.length + '</b> server(s)?<br><br>'
+    + names.map(function(n) { return '&bull; ' + _escAttr(n); }).join('<br>'));
+  if (!ok) return;
   for (var i = 0; i < modified.length; i++) {
-    await _feSavePane(modified[i].server);
+    await _feSavePane(modified[i].server, true);
   }
 }
 
