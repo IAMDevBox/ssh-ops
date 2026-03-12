@@ -1074,8 +1074,17 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not session:
             return {"error": f"Server '{server_name}' not connected"}
         try:
-            # Single compound command: check dir, check binary, then cat
-            # Minimizes history entries in PSMP shell mode
+            # Prefer SFTP — no shell history, handles dir/binary natively
+            if session.has_sftp:
+                try:
+                    content = session.sftp_read_file(file_path)
+                    return {"content": content, "path": file_path, "server": server_name}
+                except IsADirectoryError:
+                    return {"error": "Is a directory — cannot read as text"}
+                except ValueError as ve:
+                    return {"error": str(ve)}
+
+            # Fallback: shell compound command
             qp = _shell_quote(file_path)
             compound = (
                 f"if test -d {qp}; then echo __ISDIR__; "
@@ -1108,7 +1117,13 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not session:
             return {"error": f"Server '{server_name}' not connected"}
         try:
-            # Write via base64 to handle special characters safely
+            # Prefer SFTP — no shell history pollution
+            if session.has_sftp:
+                session.sftp_write_file(file_path, content)
+                await _broadcast(f"[{server_name}] File saved: {file_path}")
+                return {"status": "ok"}
+
+            # Fallback: shell base64 write
             import base64
             b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
             cmd = f"echo {_shell_quote(b64)} | base64 -d > {_shell_quote(file_path)}"

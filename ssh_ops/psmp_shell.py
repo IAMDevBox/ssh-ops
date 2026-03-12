@@ -21,12 +21,15 @@ for each command is the command itself.
 """
 
 import asyncio
+import logging
 import re
 import threading
 import uuid
 from typing import Generator
 
 import asyncssh
+
+logger = logging.getLogger(__name__)
 
 _ANSI_RE = re.compile(r'(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b\(B)')
 
@@ -43,6 +46,7 @@ class PsmpShell:
         self.motd = ""
         self._conn = None
         self._process = None
+        self._sftp = None  # SFTP client if supported
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=self._loop.run_forever, daemon=True
@@ -117,6 +121,14 @@ class PsmpShell:
         # Now drain to the next prompt
         await self._read_until(r"[$#]\s*$", timeout=10)
 
+        # Try to open SFTP — avoids shell-based file transfer if supported
+        try:
+            self._sftp = await self._conn.start_sftp_client()
+            logger.info("PSMP SFTP channel opened")
+        except Exception as exc:
+            self._sftp = None
+            logger.warning("PSMP SFTP not available: %s — file ops will use shell", exc)
+            logger.debug("SFTP error details:", exc_info=True)
 
     async def _read_until(self, pattern: str, timeout: int = 30) -> str:
         buf = ""
@@ -228,18 +240,23 @@ class PsmpShell:
 
     def upload_file(self, local_path: str, remote_path: str,
                     mode: str | int | None = None) -> None:
-        """Upload file via base64-encoded shell transfer (PSMP blocks SFTP on shared connection)."""
+        """Upload file — SFTP if available, otherwise base64 shell transfer."""
+        if self._sftp:
+            future = asyncio.run_coroutine_threadsafe(
+                self._sftp_upload(local_path, remote_path, mode), self._loop)
+            future.result(timeout=130)
+            return
+
+        # Fallback: base64 shell transfer
         import base64
         from pathlib import Path
 
         data = Path(local_path).read_bytes()
         b64 = base64.b64encode(data).decode('ascii')
 
-        # Split into chunks to avoid shell line length limits
         chunk_size = 4096
         chunks = [b64[i:i + chunk_size] for i in range(0, len(b64), chunk_size)]
 
-        # Write base64 chunks to temp file, then decode to destination
         tmp_b64 = remote_path + '._b64tmp'
         cmds = [f"rm -f {tmp_b64}"]
         for chunk in chunks:
@@ -259,12 +276,26 @@ class PsmpShell:
                 raise RuntimeError(
                     f"Upload failed (exit={exit_code}): {local_path} -> {remote_path}")
 
+    async def _sftp_upload(self, local_path: str, remote_path: str,
+                           mode: str | int | None = None) -> None:
+        await self._sftp.put(local_path, remote_path)
+        if mode is not None:
+            perms = int(str(mode), 8) if isinstance(mode, str) else mode
+            await self._sftp.chmod(remote_path, perms)
+
     def download_file(self, remote_path: str, local_path: str) -> None:
-        """Download file via base64-encoded shell transfer."""
-        import base64
+        """Download file — SFTP if available, otherwise base64 shell transfer."""
         from pathlib import Path
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
 
+        if self._sftp:
+            future = asyncio.run_coroutine_threadsafe(
+                self._sftp.get(remote_path, local_path), self._loop)
+            future.result(timeout=130)
+            return
+
+        # Fallback: base64 shell transfer
+        import base64
         cmd = f"base64 {remote_path}"
         with self._cmd_lock:
             future = asyncio.run_coroutine_threadsafe(
@@ -276,6 +307,41 @@ class PsmpShell:
 
         b64_text = "".join(line.strip() for line in lines)
         Path(local_path).write_bytes(base64.b64decode(b64_text))
+
+    @property
+    def has_sftp(self) -> bool:
+        return self._sftp is not None
+
+    def sftp_read_file(self, remote_path: str) -> str:
+        """Read a text file via SFTP. Raises on directory or binary."""
+        future = asyncio.run_coroutine_threadsafe(
+            self._sftp_read(remote_path), self._loop)
+        return future.result(timeout=60)
+
+    async def _sftp_read(self, remote_path: str) -> str:
+        stat = await self._sftp.stat(remote_path)
+        import asyncssh
+        if asyncssh.FILEXFER_TYPE_DIRECTORY == (stat.type if hasattr(stat, 'type') else None):
+            raise IsADirectoryError(remote_path)
+        # Also check via permissions
+        if stat.permissions is not None and (stat.permissions & 0o40000):
+            raise IsADirectoryError(remote_path)
+        async with self._sftp.open(remote_path, 'rb') as f:
+            data = await f.read()
+        # Check binary
+        if b'\x00' in data[:8192]:
+            raise ValueError("Binary file — cannot read as text")
+        return data.decode('utf-8')
+
+    def sftp_write_file(self, remote_path: str, content: str) -> None:
+        """Write a text file via SFTP."""
+        future = asyncio.run_coroutine_threadsafe(
+            self._sftp_write(remote_path, content), self._loop)
+        future.result(timeout=60)
+
+    async def _sftp_write(self, remote_path: str, content: str) -> None:
+        async with self._sftp.open(remote_path, 'wb') as f:
+            await f.write(content.encode('utf-8'))
 
     def is_alive(self) -> bool:
         if not self._conn or not self._process:
@@ -290,6 +356,12 @@ class PsmpShell:
             return False
 
     def close(self):
+        if self._sftp:
+            try:
+                self._sftp.exit()
+            except Exception:
+                pass
+            self._sftp = None
         if self._process:
             try:
                 self._process.stdin.write_eof()

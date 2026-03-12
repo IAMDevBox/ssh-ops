@@ -148,6 +148,44 @@ class SSHSession:
             finally:
                 sftp.close()
 
+    @property
+    def has_sftp(self) -> bool:
+        """True when SFTP is available (always for paramiko, conditional for PSMP)."""
+        if self._psmp:
+            return self._psmp.has_sftp
+        return True  # paramiko always has SFTP
+
+    def sftp_read_file(self, remote_path: str) -> str:
+        """Read text file via SFTP. Raises IsADirectoryError or ValueError for binary."""
+        if self._psmp:
+            return self._psmp.sftp_read_file(remote_path)
+        with self._lock:
+            sftp = self.client.open_sftp()
+            try:
+                stat = sftp.stat(remote_path)
+                import stat as stat_mod
+                if stat_mod.S_ISDIR(stat.st_mode):
+                    raise IsADirectoryError(remote_path)
+                with sftp.open(remote_path, 'rb') as f:
+                    data = f.read()
+                if b'\x00' in data[:8192]:
+                    raise ValueError("Binary file — cannot read as text")
+                return data.decode('utf-8')
+            finally:
+                sftp.close()
+
+    def sftp_write_file(self, remote_path: str, content: str) -> None:
+        """Write text file via SFTP."""
+        if self._psmp:
+            return self._psmp.sftp_write_file(remote_path, content)
+        with self._lock:
+            sftp = self.client.open_sftp()
+            try:
+                with sftp.open(remote_path, 'wb') as f:
+                    f.write(content.encode('utf-8'))
+            finally:
+                sftp.close()
+
     def is_alive(self) -> bool:
         if self._psmp:
             return self._psmp.is_alive()
