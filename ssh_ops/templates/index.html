@@ -1270,18 +1270,25 @@ function connectWS() {
 
 // --- API helpers ---
 // Prompt user for OTP to enable SFTP on PSMP servers
-async function _promptSftpOtp(serverName) {
+async function _promptSftpOtp(serverName, allServers) {
   return new Promise(function(resolve) {
     var label = serverName ? ('SFTP — Enter OTP for ' + serverName) : 'SFTP — Enter OTP';
     var desc = serverName
       ? 'Enter a new OTP to open SFTP on <b>' + serverName + '</b>.'
       : 'Enter OTP to enable SFTP file transfer.';
+    // Show full server list when multiple servers need OTP
+    var listHtml = '';
+    if (allServers && allServers.length > 1) {
+      listHtml = '<p style="margin:4px 0 8px;font-size:12px;color:#888">' +
+        'Servers needing OTP: ' + allServers.join(', ') + '</p>';
+    }
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML =
       '<div class="modal" style="width:360px">' +
         '<div class="modal-title">' + label + '</div>' +
         '<p style="margin:8px 0;font-size:13px">' + desc + '</p>' +
+        listHtml +
         '<input id="sftpOtpInput" type="password" placeholder="OTP" style="width:100%;padding:6px;box-sizing:border-box;margin:4px 0 12px">' +
         '<div style="text-align:right">' +
           '<button id="sftpOtpCancel" class="btn" style="margin-right:8px">Cancel</button>' +
@@ -1308,20 +1315,13 @@ async function ensureSftpForServers(serverNames) {
   if (!check || !check.need_otp || !check.need_otp.length) return null; // all good
 
   var need = check.need_otp;
-  // Confirm with user upfront
-  var msg = need.length === 1
-    ? 'Server ' + need[0] + ' needs a new OTP to enable SFTP file transfer.\n\nContinue?'
-    : need.length + ' servers need separate OTPs for SFTP file transfer:\n' +
-      need.map(function(n, i) { return '  ' + (i + 1) + '. ' + n; }).join('\n') +
-      '\n\nYou will enter OTPs one by one. Continue?';
-  if (!confirm(msg)) return 'SFTP cancelled by user';
 
-  // Prompt OTP for each server sequentially
+  // Prompt OTP for each server sequentially (info shown in the dialog itself)
   for (var i = 0; i < need.length; i++) {
-    var label = need.length > 1
+    var hint = need.length > 1
       ? need[i] + ' (' + (i + 1) + '/' + need.length + ')'
       : need[i];
-    var otp = await _promptSftpOtp(label);
+    var otp = await _promptSftpOtp(hint, need.length > 1 ? need : null);
     if (!otp) return 'SFTP cancelled by user';
     var enable = await api('/api/enable-sftp', { server: need[i], otp: otp });
     if (enable.error) return 'SFTP failed for ' + need[i] + ': ' + enable.error;
