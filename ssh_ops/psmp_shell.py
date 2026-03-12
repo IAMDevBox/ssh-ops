@@ -46,7 +46,9 @@ class PsmpShell:
         self.motd = ""
         self._conn = None
         self._process = None
-        self._sftp = None  # SFTP client if supported
+        self._sftp = None  # SFTP client (lazy, opened on first file op)
+        self._sftp_conn = None  # dedicated SFTP connection
+        self._sftp_params = None  # (host, port, user, keep_alive) for lazy SFTP
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=self._loop.run_forever, daemon=True
@@ -121,14 +123,8 @@ class PsmpShell:
         # Now drain to the next prompt
         await self._read_until(r"[$#]\s*$", timeout=10)
 
-        # Try to open SFTP — avoids shell-based file transfer if supported
-        try:
-            self._sftp = await self._conn.start_sftp_client()
-            logger.info("PSMP SFTP channel opened")
-        except Exception as exc:
-            self._sftp = None
-            logger.warning("PSMP SFTP not available: %s — file ops will use shell", exc)
-            logger.debug("SFTP error details:", exc_info=True)
+        # Store params for lazy SFTP connection (opened on first file op)
+        self._sftp_params = (host, port, user, keep_alive)
 
     async def _read_until(self, pattern: str, timeout: int = 30) -> str:
         buf = ""
@@ -310,7 +306,60 @@ class PsmpShell:
 
     @property
     def has_sftp(self) -> bool:
-        return self._sftp is not None
+        if self._sftp is None:
+            return False
+        # Check if SFTP connection is still alive
+        if self._sftp_conn:
+            try:
+                transport = self._sftp_conn._transport
+                if transport is None or transport.is_closing():
+                    self._close_sftp()
+                    return False
+            except Exception:
+                self._close_sftp()
+                return False
+        return True
+
+    def _close_sftp(self):
+        """Clean up dead SFTP connection so it can be re-initialized."""
+        logger.warning("PSMP SFTP connection lost — will prompt for OTP on next file op")
+        if self._sftp:
+            try:
+                self._sftp.exit()
+            except Exception:
+                pass
+            self._sftp = None
+        if self._sftp_conn:
+            try:
+                self._sftp_conn.close()
+            except Exception:
+                pass
+            self._sftp_conn = None
+
+    @property
+    def can_sftp(self) -> bool:
+        """True if SFTP params are available (PSMP mode) for lazy init."""
+        return self._sftp_params is not None
+
+    def ensure_sftp(self, otp: str) -> None:
+        """Open dedicated SFTP connection with a new OTP. Call once before file ops."""
+        if self._sftp:
+            return  # already open
+        future = asyncio.run_coroutine_threadsafe(
+            self._open_sftp(otp), self._loop)
+        future.result(timeout=30)
+
+    async def _open_sftp(self, otp: str) -> None:
+        host, port, user, keep_alive = self._sftp_params
+        self._sftp_conn = await asyncssh.connect(
+            host, port=port,
+            username=user, password=otp,
+            known_hosts=None,
+            preferred_auth="password",
+            keepalive_interval=keep_alive,
+        )
+        self._sftp = await self._sftp_conn.start_sftp_client()
+        logger.info("PSMP SFTP channel opened (dedicated connection)")
 
     def sftp_read_file(self, remote_path: str) -> str:
         """Read a text file via SFTP. Raises on directory or binary."""
@@ -362,6 +411,12 @@ class PsmpShell:
             except Exception:
                 pass
             self._sftp = None
+        if self._sftp_conn:
+            try:
+                self._sftp_conn.close()
+            except Exception:
+                pass
+            self._sftp_conn = None
         if self._process:
             try:
                 self._process.stdin.write_eof()

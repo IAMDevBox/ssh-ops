@@ -1269,6 +1269,48 @@ function connectWS() {
 }
 
 // --- API helpers ---
+// Prompt user for OTP to enable SFTP on a PSMP server
+async function _promptSftpOtp(serverName) {
+  return new Promise(function(resolve) {
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML =
+      '<div class="modal" style="width:360px">' +
+        '<div class="modal-title">SFTP — Enter OTP</div>' +
+        '<p style="margin:8px 0;font-size:13px">Server <b>' + serverName + '</b> needs a new OTP to enable SFTP file transfer.</p>' +
+        '<input id="sftpOtpInput" type="password" placeholder="OTP" style="width:100%;padding:6px;box-sizing:border-box;margin:4px 0 12px">' +
+        '<div style="text-align:right">' +
+          '<button id="sftpOtpCancel" class="btn" style="margin-right:8px">Cancel</button>' +
+          '<button id="sftpOtpOk" class="btn btn-primary">Connect</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    var inp = document.getElementById('sftpOtpInput');
+    inp.focus();
+    function finish(val) { document.body.removeChild(overlay); resolve(val); }
+    document.getElementById('sftpOtpCancel').onclick = function() { finish(null); };
+    document.getElementById('sftpOtpOk').onclick = function() { finish(inp.value); };
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') finish(inp.value);
+      if (e.key === 'Escape') finish(null);
+    });
+  });
+}
+
+// Wrapper: call API, handle need_sftp_otp by prompting and retrying
+async function apiWithSftp(url, body) {
+  var r = await api(url, body);
+  if (r && r.need_sftp_otp) {
+    var otp = await _promptSftpOtp(r.server);
+    if (!otp) return { error: 'SFTP cancelled by user' };
+    var enable = await api('/api/enable-sftp', { server: r.server, otp: otp });
+    if (enable.error) return { error: 'SFTP: ' + enable.error };
+    // Retry original request
+    r = await api(url, body);
+  }
+  return r;
+}
+
 async function api(url, body) {
   try {
     var res = await fetch(url, {
@@ -2219,7 +2261,7 @@ async function openFileEditor(serverNames, filePath) {
   appendLine('[edit] Loading ' + filePath + ' from ' + serverNames.length + ' server(s)...');
   var results = {};
   var promises = serverNames.map(function(name) {
-    return api('/api/read-file', { server: name, path: filePath }).then(function(r) {
+    return apiWithSftp('/api/read-file', { server: name, path: filePath }).then(function(r) {
       results[name] = r;
     });
   });
@@ -2345,7 +2387,7 @@ async function _feSavePane(serverName, skipConfirm) {
       'Save <code>' + _escAttr(_fePath) + '</code> on <b>' + _escAttr(serverName) + '</b>?');
     if (!ok) return;
   }
-  var result = await api('/api/write-file', { server: serverName, path: _fePath, content: content });
+  var result = await apiWithSftp('/api/write-file', { server: serverName, path: _fePath, content: content });
   if (result.error) {
     appendLine('[ERROR] [' + serverName + '] Save failed: ' + result.error);
     return;
@@ -2670,7 +2712,7 @@ function _isDownloadCommand(cmd) {
 
 async function downloadRemoteFile(names, filePath) {
   appendLine('[download] Fetching ' + filePath + ' from ' + names.length + ' server(s)...');
-  var result = await api('/api/download-file', { servers: names, path: filePath });
+  var result = await apiWithSftp('/api/download-file', { servers: names, path: filePath });
   if (result.error) { appendLine('[ERROR] ' + result.error); return; }
 
   var fileName = filePath.split('/').pop();
@@ -3854,7 +3896,7 @@ async function _fpAction(action) {
 
   if (action === 'copy') {
     appendLine('[copy] Reading ' + path + ' from ' + names[0] + '...');
-    var result = await api('/api/read-file', { server: names[0], path: path });
+    var result = await apiWithSftp('/api/read-file', { server: names[0], path: path });
     if (result.error) { appendLine('[ERROR] ' + result.error); return; }
     try {
       await navigator.clipboard.writeText(result.content);

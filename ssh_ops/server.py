@@ -1063,6 +1063,22 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
         return {"results": results}
 
+    @app.post("/api/enable-sftp")
+    async def enable_sftp(body: dict):
+        """Open dedicated SFTP connection for a PSMP server. Body: {"server": "name", "otp": "..."}"""
+        server_name = body.get("server", "")
+        otp = body.get("otp", "")
+        if not otp:
+            return {"error": "OTP is required"}
+        session = pool.get_session(server_name)
+        if not session:
+            return {"error": f"Server '{server_name}' not connected"}
+        try:
+            session.ensure_sftp(otp)
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": f"SFTP connection failed: {e}"}
+
     @app.post("/api/read-file")
     async def read_remote_file(body: dict):
         """Read a file from a remote server. Body: {"server": "name", "path": "/abs/path"}"""
@@ -1074,6 +1090,9 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not session:
             return {"error": f"Server '{server_name}' not connected"}
         try:
+            # Prompt for SFTP OTP if PSMP session hasn't opened SFTP yet
+            if session.needs_sftp_otp:
+                return {"need_sftp_otp": True, "server": server_name}
             # Prefer SFTP — no shell history, handles dir/binary natively
             if session.has_sftp:
                 try:
@@ -1117,7 +1136,8 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not session:
             return {"error": f"Server '{server_name}' not connected"}
         try:
-            # Prefer SFTP — no shell history pollution
+            if session.needs_sftp_otp:
+                return {"need_sftp_otp": True, "server": server_name}
             if session.has_sftp:
                 session.sftp_write_file(file_path, content)
                 await _broadcast(f"[{server_name}] File saved: {file_path}")
@@ -1150,6 +1170,12 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         servers = config.filter_servers(server_names)
         if not servers:
             return {"error": "no servers matched"}
+
+        # Check if any PSMP server needs SFTP OTP
+        for s in servers:
+            sess = pool.get_session(s.name)
+            if sess and sess.needs_sftp_otp:
+                return {"need_sftp_otp": True, "server": s.name}
 
         import concurrent.futures
 

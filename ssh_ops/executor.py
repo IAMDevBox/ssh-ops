@@ -155,6 +155,18 @@ class SSHSession:
             return self._psmp.has_sftp
         return True  # paramiko always has SFTP
 
+    @property
+    def needs_sftp_otp(self) -> bool:
+        """True if SFTP requires a separate OTP to initialize (PSMP lazy mode)."""
+        if self._psmp:
+            return not self._psmp.has_sftp and self._psmp.can_sftp
+        return False
+
+    def ensure_sftp(self, otp: str) -> None:
+        """Open SFTP with a new OTP (PSMP only)."""
+        if self._psmp:
+            self._psmp.ensure_sftp(otp)
+
     def sftp_read_file(self, remote_path: str) -> str:
         """Read text file via SFTP. Raises IsADirectoryError or ValueError for binary."""
         if self._psmp:
