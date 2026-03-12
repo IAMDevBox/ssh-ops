@@ -1283,7 +1283,7 @@ async function _promptSftpOtp(serverName, allServers) {
         'Servers needing OTP: ' + allServers.join(', ') + '</p>';
     }
     var overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    overlay.className = 'modal-overlay show';
     overlay.innerHTML =
       '<div class="modal" style="width:360px">' +
         '<div class="modal-title">' + label + '</div>' +
