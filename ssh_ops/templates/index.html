@@ -4,11 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SSH Ops Tool</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/matchesonscrollbar.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/search.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/jump-to-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/matchesonscrollbar.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/scroll/annotatescrollbar.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/properties/properties.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/toml/toml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/nginx/nginx.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/material-darker.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Consolas, monospace; background: #f5f5f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
   header { background: #fff; padding: 10px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-  header h1 { font-size: 16px; color: #2563eb; white-space: nowrap; }
+  header h1 { font-size: 16px; color: #2563eb; white-space: nowrap; cursor: pointer; }
+  .header-tips { font-size: 11px; color: #888; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 16px; }
+  .header-tips kbd { background: #e8e8e8; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-family: Consolas, monospace; font-size: 10px; color: #555; }
+  .header-tips { transition: opacity 0.3s; }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .config-bar { display: flex; align-items: center; gap: 6px; }
   .config-bar select { padding: 3px 6px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-size: 12px; }
@@ -124,6 +147,15 @@
   @keyframes sched-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   .sched-indicator .sched-stop { font-size: 10px; color: #dc2626; margin-left: 2px; cursor: pointer; }
   .sched-indicator .sched-stop:hover { text-decoration: underline; }
+  .cwd-bar { background: #f0f4ff; border-top: 1px solid #ddd; padding: 3px 10px; display: flex; align-items: center; gap: 4px; font-size: 12px; font-family: Consolas, monospace; color: #555; }
+  .cwd-bar .cwd-label { color: #888; font-size: 10px; text-transform: uppercase; margin-right: 4px; }
+  .cwd-bar .cwd-seg { cursor: pointer; padding: 1px 3px; border-radius: 2px; color: #2563eb; }
+  .cwd-bar .cwd-seg:hover { background: #dbeafe; }
+  .cwd-bar .cwd-sep { color: #bbb; margin: 0 1px; }
+  .cwd-bar .cwd-home { cursor: pointer; padding: 1px 4px; border-radius: 2px; color: #888; font-size: 11px; }
+  .cwd-bar .cwd-home:hover { background: #e8e8e8; color: #333; }
+  .cwd-bar .cwd-sync { cursor: pointer; padding: 1px 4px; border-radius: 2px; color: #888; font-size: 11px; margin-left: auto; }
+  .cwd-bar .cwd-sync:hover { background: #e8e8e8; color: #333; }
   .actions { background: #fff; border-top: 1px solid #ddd; padding: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .actions.locked input[type="text"], .actions.locked select, .actions.locked .btn:not(.unlock-exempt) { opacity: 0.4; pointer-events: none; }
   .actions.locked input[type="file"] { pointer-events: none; }
@@ -211,15 +243,80 @@
   .modal.wide .CodeMirror { height: 100%; font-size: 13px; border: 1px solid #e0e0e0; border-radius: 4px; }
   .yaml-editor-wrap { margin-bottom: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 
+  /* Full-screen remote file editor */
+  .file-editor-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #1e1e1e; z-index: 2000; flex-direction: column; }
+  .file-editor-overlay.show { display: flex; }
+  .file-editor-toolbar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: #2d2d2d; color: #ccc; font-size: 13px; border-bottom: 1px solid #444; }
+  .file-editor-toolbar .fe-path { flex: 1; font-family: Consolas, monospace; color: #e0e0e0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-editor-toolbar .fe-server { color: #6cb6ff; font-weight: bold; }
+  .file-editor-toolbar .fe-modified { color: #fbbf24; margin-left: 4px; display: none; }
+  .file-editor-toolbar .fe-btn { padding: 4px 12px; border: 1px solid #555; border-radius: 3px; background: #3c3c3c; color: #ddd; cursor: pointer; font-size: 12px; }
+  .file-editor-toolbar .fe-btn:hover { background: #4c4c4c; }
+  .file-editor-toolbar .fe-btn.save { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+  .file-editor-toolbar .fe-btn.save:hover { background: #1d4ed8; }
+  .file-editor-toolbar select { padding: 3px 6px; background: #3c3c3c; color: #ddd; border: 1px solid #555; border-radius: 3px; font-size: 12px; }
+  .file-editor-body { flex: 1; display: flex; overflow: hidden; gap: 1px; background: #444; }
+  .fe-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #1e1e1e; }
+  .fe-pane-header { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #2d2d2d; border-bottom: 1px solid #444; font-size: 12px; color: #ccc; }
+  .fe-pane-header .fe-pane-server { color: #6cb6ff; font-weight: bold; }
+  .fe-pane-header .fe-pane-mod { color: #fbbf24; display: none; }
+  .fe-pane-header .fe-btn { padding: 2px 8px; font-size: 11px; }
+  .fe-pane-editor { flex: 1; overflow: hidden; }
+  .fe-pane-editor .CodeMirror { height: 100%; font-size: 14px; }
+  .file-editor-status { padding: 3px 12px; background: #007acc; color: #fff; font-size: 11px; display: flex; gap: 16px; }
+  /* Diff highlighting */
+  .fe-btn.diff-active { background: #16a34a; border-color: #15803d; color: #fff; }
+  .fe-btn.diff-active:hover { background: #15803d; }
+  .cm-diff-changed { background: rgba(234,179,8,0.15) !important; }
+  .cm-diff-added { background: rgba(34,197,94,0.15) !important; }
+  .cm-diff-removed { background: rgba(239,68,68,0.15) !important; }
+  .cm-diff-changed .CodeMirror-linenumber { color: #eab308; }
+  .cm-diff-added .CodeMirror-linenumber { color: #22c55e; }
+  .cm-diff-removed .CodeMirror-linenumber { color: #ef4444; }
+  .fe-diff-summary { font-size: 11px; color: #aaa; margin-left: auto; padding-right: 4px; }
+  .fe-diff-summary .diff-same { color: #888; }
+  .fe-diff-summary .diff-diff { color: #eab308; font-weight: bold; }
+
+  /* Diff minimap */
+  .fe-pane-wrap { display: flex; flex: 1; min-height: 0; position: relative; }
+  .fe-pane-wrap .fe-pane-editor { flex: 1; }
+  .fe-minimap { width: 40px; background: #252525; cursor: pointer; position: relative; flex-shrink: 0; display: none; }
+  .fe-minimap canvas { width: 100%; height: 100%; }
+  .fe-minimap-viewport { position: absolute; left: 0; right: 0; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); pointer-events: none; min-height: 8px; }
+
+  /* Compare view */
+  .compare-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #f5f5f5; z-index: 1500; flex-direction: column; }
+  .compare-overlay.show { display: flex; }
+  .compare-toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #fff; border-bottom: 1px solid #ddd; font-size: 13px; }
+  .compare-toolbar .cmp-cmd { flex: 1; font-family: Consolas, monospace; color: #2563eb; font-weight: bold; }
+  .compare-body { flex: 1; display: flex; overflow: auto; gap: 1px; background: #ddd; }
+  .compare-col { flex: 1; min-width: 200px; display: flex; flex-direction: column; background: #fff; }
+  .compare-col-header { padding: 6px 10px; background: #f0f4ff; font-weight: bold; font-size: 12px; color: #1e40af; border-bottom: 1px solid #ddd; position: sticky; top: 0; z-index: 1; }
+  .compare-col-header .cmp-exit { font-weight: normal; margin-left: 6px; }
+  .compare-col-header .cmp-exit.ok { color: #16a34a; }
+  .compare-col-header .cmp-exit.fail { color: #dc2626; }
+  .compare-col-body { flex: 1; overflow: auto; padding: 6px 8px; font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+
+  /* File path context menu */
+  .fp-link { text-decoration: underline dotted; text-decoration-color: rgba(100,160,255,0.4); text-underline-offset: 2px; cursor: pointer; position: relative; border-radius: 2px; transition: background 0.15s; }
+  .fp-link:hover { background: rgba(37,99,235,0.12); text-decoration-color: #2563eb; }
+  .fp-seg { text-decoration: none !important; padding: 0 1px; }
+  .fp-seg:hover { text-decoration: underline dotted !important; text-decoration-color: #2563eb !important; }
+  .fp-sep { color: inherit; opacity: 0.5; }
+  .fp-menu { display: none; position: fixed; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 3000; padding: 4px 0; min-width: 160px; font-size: 12px; }
+  .fp-menu.show { display: block; }
+  .fp-menu-item { display: flex; align-items: center; padding: 6px 12px; cursor: pointer; color: #333; white-space: nowrap; border: none; background: none; width: 100%; text-align: left; font-size: 12px; gap: 8px; }
+  .fp-menu-item:hover { background: #f0f4ff; }
+  .fp-menu-item .fp-icon { width: 16px; text-align: center; flex-shrink: 0; opacity: 0.7; }
+  .fp-menu-item.danger { color: #dc2626; }
+  .fp-menu-item.danger:hover { background: #fef2f2; }
 </style>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
 </head>
 <body>
 
 <header>
-  <h1>SSH Ops Tool</h1>
+  <h1 onclick="_showHelpModal()" title="Click for help">SSH Ops Tool</h1>
+  <span class="header-tips" id="headerTips"></span>
   <div class="header-right">
     <div class="config-bar">
       <select id="configSelect" onchange="switchConfig()"></select>
@@ -292,10 +389,17 @@
       <div class="panel-toolbar">
         <button class="tbtn" onclick="toggleTimestamps(this)" title="Hide timestamps and prefixes">T</button>
         <button class="tbtn" onclick="copyLines('output')" title="Copy all output">&#x2398; All</button>
+
         <button class="tbtn" onclick="scrollToBottom()" title="Scroll to bottom">&#x21E9;</button>
         <button class="tbtn danger" onclick="clearActivePanel()" title="Clear" id="clearPanelBtn">&#x2715; Clear</button>
       </div>
       <div class="tab-panel active" id="panel-main"></div>
+    </div>
+    <div class="cwd-bar" id="cwdBar" style="display:none">
+      <span class="cwd-label">cwd</span>
+      <span id="cwdBreadcrumb"></span>
+      <span class="cwd-home" onclick="_cwdReset()" title="Reset to /">&#x2302;</span>
+      <span class="cwd-sync" onclick="_cwdSync()" title="Sync from server (pwd)">&#x21bb; sync</span>
     </div>
     <div class="actions locked" id="actionsPanel">
       <label class="adhoc-toggle unlock-exempt" title="Enable ad-hoc command and file upload. Auto-locks after 60s of inactivity."><input type="checkbox" id="adhocToggle" class="unlock-exempt" onchange="toggleAdhoc(this.checked)">Ad-hoc <span class="countdown" id="adhocCountdown"></span></label>
@@ -309,7 +413,10 @@
       </div>
       <select id="cmdHistory" onchange="pickCmdHistory()"><option value="">History</option></select>
       <button class="btn" onclick="deleteCmdHistoryItem()" title="Delete selected history item" style="padding:3px 5px;font-size:10px;color:#bbb" id="cmdHistDelBtn">&#x2715;</button>
+      <select id="cmdFavorites" onchange="pickFavorite()" style="max-width:140px"><option value="">&#x2605; Favorites</option></select>
+      <button class="btn" onclick="toggleFavorite()" title="Pin/unpin current command as favorite" style="padding:3px 6px;font-size:12px;color:#f59e0b" id="favToggleBtn">&#x2606;</button>
       <button class="btn primary" onclick="runCommand()">&#x25b6; Run</button>
+      <button class="btn" onclick="runCompare()" title="Run and compare output across servers">&#x2194; Compare</button>
       <button class="btn" onclick="addCmdToTasks()">+ Task</button>
       <div class="upload-row">
         <input type="file" id="fileInput" multiple>
@@ -335,6 +442,56 @@
     <div class="modal-hint" id="modalHint" style="display:none"></div>
     <div class="modal-buttons" id="modalButtons"></div>
   </div>
+</div>
+
+<!-- Compare view overlay -->
+<div class="compare-overlay" id="compareOverlay">
+  <div class="compare-toolbar">
+    <span>Compare:</span>
+    <span class="cmp-cmd" id="cmpCmd"></span>
+    <button class="btn" onclick="document.getElementById('compareOverlay').classList.remove('show')">Close</button>
+  </div>
+  <div class="compare-body" id="compareBody"></div>
+</div>
+
+<!-- Full-screen remote file editor (multi-pane) -->
+<div class="file-editor-overlay" id="fileEditorOverlay">
+  <div class="file-editor-toolbar">
+    <span class="fe-path" id="fePath"></span>
+    <select id="feLang" onchange="_feSetLang(this.value)" title="Syntax">
+      <option value="">Plain Text</option>
+      <option value="yaml">YAML</option>
+      <option value="javascript">JSON</option>
+      <option value="xml">XML</option>
+      <option value="shell">Shell</option>
+      <option value="properties">Properties</option>
+      <option value="toml">TOML</option>
+      <option value="python">Python</option>
+      <option value="nginx">Nginx</option>
+    </select>
+    <button class="fe-btn" id="feDiffBtn" onclick="_feToggleDiff()" title="Toggle diff comparison" style="display:none">Diff</button>
+    <button class="fe-btn save" id="feSaveAllBtn" onclick="_feSaveAll()" title="Save all modified panes" style="display:none">Save All</button>
+    <button class="fe-btn" onclick="_feClose()">Close</button>
+  </div>
+  <div class="file-editor-body" id="feBody"></div>
+  <div class="file-editor-status">
+    <span id="feCursor">Ln 1, Col 1</span>
+    <span id="feEncoding">UTF-8</span>
+    <span id="feSize"></span>
+  </div>
+</div>
+
+<!-- File path context menu (floating) -->
+<div class="fp-menu" id="fpMenu">
+  <button class="fp-menu-item" onclick="_fpAction('copyName')"><span class="fp-icon">&#x2398;</span>Copy name</button>
+  <button class="fp-menu-item" onclick="_fpAction('copyPath')"><span class="fp-icon">&#x2398;</span>Copy path</button>
+  <button class="fp-menu-item fp-file-only" onclick="_fpAction('copy')"><span class="fp-icon">&#x2398;</span>Copy file content</button>
+  <button class="fp-menu-item fp-file-only" onclick="_fpAction('edit')"><span class="fp-icon">&#x270e;</span>Open in editor</button>
+  <button class="fp-menu-item fp-file-only" onclick="_fpAction('editAll')"><span class="fp-icon">&#x270e;</span>Open on all servers</button>
+  <button class="fp-menu-item fp-dir-only" onclick="_fpAction('openDir')"><span class="fp-icon">&#x25B6;</span>Open directory (ls -ltr)</button>
+  <button class="fp-menu-item fp-dir-only" onclick="_fpAction('parentDir')"><span class="fp-icon">&#x25B2;</span>Go to parent directory</button>
+  <button class="fp-menu-item fp-file-only" onclick="_fpAction('download')"><span class="fp-icon">&#x2913;</span>Download</button>
+  <button class="fp-menu-item fp-file-only danger" onclick="_fpAction('delete')"><span class="fp-icon">&#x2716;</span>Delete</button>
 </div>
 
 <script>
@@ -426,6 +583,12 @@ function openAliasesModal() {
   }
   var html = '<div style="display:flex;flex-direction:column;gap:8px">'
     + '<div style="font-size:11px;color:#888">Define short names for common commands. Aliases expand automatically in the command input.</div>'
+    + '<div style="font-size:11px;color:#6cb6ff;background:#1e293b;padding:6px 10px;border-radius:4px;line-height:1.6;font-family:Consolas,monospace">'
+    + '<b style="color:#fbbf24">Built-in commands:</b><br>'
+    + '<b>se</b> <span style="color:#aaa">/path/to/file</span> &mdash; Open remote file in editor (multi-server side-by-side, text only)<br>'
+    + '<b>dl</b> <span style="color:#aaa">/path/to/file</span> &mdash; Download remote file (multi-server auto zip, supports binary)<br>'
+    + '<span style="color:#888;font-size:10px">Output file paths are clickable: copy name/path/content, edit, download, delete. Binary files only support download and delete.</span>'
+    + '</div>'
     + '<div id="aliasRows" style="display:flex;flex-direction:column;gap:4px">' + rows + '</div>'
     + '<button class="btn" onclick="_addAliasRow()" style="align-self:flex-start;font-size:11px;padding:2px 8px">+ Add</button>'
     + '<div id="aliasError" style="display:none;color:#dc2626;font-size:12px;padding:4px 8px;background:#fef2f2;border-radius:3px"></div>'
@@ -566,6 +729,7 @@ document.getElementById('cmdInput').addEventListener('input', function() {
   this.classList.toggle('warn', cmd && isModifyingCmd(resolveAlias(cmd)));
   _updateAliasHint();
   _showAliasSuggest(cmd);
+  _updateFavIcon();
 });
 document.getElementById('cmdInput').addEventListener('blur', function() {
   setTimeout(function() { document.getElementById('aliasSuggest').style.display = 'none'; }, 150);
@@ -940,6 +1104,15 @@ function appendLine(text) {
   var panel = document.getElementById('panel-main');
   var cls = _classifyLine(text);
 
+  // Track directory context from command headers for ls filename linkification
+  if (cls === 'cmd-input') {
+    var dir = _extractDirFromCmd(text);
+    if (dir) _fpLastDir = dir;
+    else _fpLastDir = _cwd || '';
+    // Track if this is a listing command (ls/ll/find) even without path
+    _fpIsListCmd = /(?:\$\s+)?(?:ls|ll|find|dir)\b/.test(text);
+  }
+
   // Non-output line → close current output block
   if (cls !== 'output' && _currentOutputBlock) {
     _closeOutputBlock();
@@ -992,13 +1165,13 @@ function _buildLineContent(div, text) {
     prefix.textContent = '[' + serverName + '] ';
     div.appendChild(prefix);
     var ansiFrag = ansiToHtml(rest);
-    if (ansiFrag) div.appendChild(ansiFrag);
-    else div.appendChild(document.createTextNode(rest));
+    if (ansiFrag) { div.appendChild(ansiFrag); _linkifyPaths(div); }
+    else { _appendWithPaths(div, rest); }
   } else {
     div.appendChild(tsSpan);
     var ansiFrag2 = ansiToHtml(text);
-    if (ansiFrag2) div.appendChild(ansiFrag2);
-    else div.appendChild(document.createTextNode(text));
+    if (ansiFrag2) { div.appendChild(ansiFrag2); _linkifyPaths(div); }
+    else { _appendWithPaths(div, text); }
   }
 }
 
@@ -1157,6 +1330,7 @@ async function switchConfig() {
     loadServers();
     loadTasks();
     loadAliases();
+    _renderFavorites();
     stopSchedule();
     _loadSchedConfig();
     appendLine('Switched to config: ' + name);
@@ -1948,6 +2122,584 @@ function _touchAdhoc() {
   }
 }
 
+// --- Favorites ---
+function _favKey() {
+  var cfg = document.getElementById('configSelect').value || 'default';
+  return 'favorites:' + cfg;
+}
+function _getFavorites() {
+  try { return JSON.parse(localStorage.getItem(_favKey())) || []; } catch(e) { return []; }
+}
+function _saveFavorites(favs) {
+  localStorage.setItem(_favKey(), JSON.stringify(favs));
+  _renderFavorites();
+}
+function _renderFavorites() {
+  var favs = _getFavorites();
+  var select = document.getElementById('cmdFavorites');
+  select.innerHTML = '';
+  var ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = '\u2605 Favorites (' + favs.length + ')';
+  select.appendChild(ph);
+  favs.forEach(function(cmd) {
+    var opt = document.createElement('option');
+    opt.value = cmd;
+    opt.textContent = cmd.length > 35 ? cmd.substring(0, 35) + '...' : cmd;
+    opt.title = cmd;
+    select.appendChild(opt);
+  });
+  _updateFavIcon();
+}
+function pickFavorite() {
+  var select = document.getElementById('cmdFavorites');
+  var val = select.value;
+  if (val) {
+    document.getElementById('cmdInput').value = val;
+    _updateAliasHint();
+    _updateFavIcon();
+  }
+  select.selectedIndex = 0;
+}
+function toggleFavorite() {
+  var cmd = document.getElementById('cmdInput').value.trim();
+  if (!cmd) return;
+  var favs = _getFavorites();
+  var idx = favs.indexOf(cmd);
+  if (idx >= 0) {
+    favs.splice(idx, 1);
+  } else {
+    favs.push(cmd);
+  }
+  _saveFavorites(favs);
+}
+function _updateFavIcon() {
+  var cmd = document.getElementById('cmdInput').value.trim();
+  var favs = _getFavorites();
+  var btn = document.getElementById('favToggleBtn');
+  btn.innerHTML = favs.indexOf(cmd) >= 0 ? '\u2605' : '\u2606';
+  btn.title = favs.indexOf(cmd) >= 0 ? 'Remove from favorites' : 'Add to favorites';
+}
+
+// --- Remote File Editor (multi-pane) ---
+var _fePanes = [];  // [{server, editor, original, el}, ...]
+var _fePath = '';
+var _EDIT_CMD = 'se';
+
+var _FE_LANG_MAP = {
+  'yml': 'yaml', 'yaml': 'yaml',
+  'json': 'javascript',
+  'xml': 'xml', 'html': 'xml', 'htm': 'xml', 'xhtml': 'xml', 'svg': 'xml',
+  'sh': 'shell', 'bash': 'shell', 'zsh': 'shell', 'ksh': 'shell', 'csh': 'shell',
+  'properties': 'properties', 'env': 'properties', 'ini': 'properties', 'cfg': 'properties',
+  'toml': 'toml',
+  'py': 'python',
+  'conf': 'nginx',
+};
+
+function _feDetectLang(path) {
+  var ext = path.split('.').pop().toLowerCase();
+  var base = path.split('/').pop().toLowerCase();
+  if (base === 'nginx.conf' || base.endsWith('.nginx')) return 'nginx';
+  if (base === '.bashrc' || base === '.bash_profile' || base === '.profile' || base === '.zshrc') return 'shell';
+  return _FE_LANG_MAP[ext] || '';
+}
+
+function _feSetLang(lang) {
+  _fePanes.forEach(function(p) { p.editor.setOption('mode', lang || null); });
+}
+
+async function openFileEditor(serverNames, filePath) {
+  if (typeof serverNames === 'string') serverNames = [serverNames];
+  _fePath = filePath;
+  var lang = _feDetectLang(filePath);
+  document.getElementById('feLang').value = lang;
+  document.getElementById('fePath').textContent = filePath;
+
+  // Load files from all servers in parallel
+  appendLine('[edit] Loading ' + filePath + ' from ' + serverNames.length + ' server(s)...');
+  var results = {};
+  var promises = serverNames.map(function(name) {
+    return api('/api/read-file', { server: name, path: filePath }).then(function(r) {
+      results[name] = r;
+    });
+  });
+  await Promise.all(promises);
+
+  // Check if any loaded
+  var loaded = serverNames.filter(function(n) { return !results[n].error; });
+  if (!loaded.length) {
+    serverNames.forEach(function(n) { appendLine('[ERROR] [' + n + '] ' + results[n].error); });
+    return;
+  }
+
+  // Clear old panes
+  _fePanes = [];
+  var body = document.getElementById('feBody');
+  body.innerHTML = '';
+
+  // Create panes
+  serverNames.forEach(function(name) {
+    var r = results[name];
+    var pane = document.createElement('div');
+    pane.className = 'fe-pane';
+
+    var header = document.createElement('div');
+    header.className = 'fe-pane-header';
+    header.innerHTML = '<span class="fe-pane-server">' + _escAttr(name) + '</span>'
+      + '<span class="fe-pane-mod">● modified</span>'
+      + '<span style="flex:1"></span>'
+      + '<button class="fe-btn save" data-server="' + _escAttr(name) + '" onclick="_feSavePane(this.dataset.server)">Save</button>';
+    pane.appendChild(header);
+
+    var paneWrap = document.createElement('div');
+    paneWrap.className = 'fe-pane-wrap';
+    var editorDiv = document.createElement('div');
+    editorDiv.className = 'fe-pane-editor';
+    paneWrap.appendChild(editorDiv);
+
+    // Minimap
+    var minimap = document.createElement('div');
+    minimap.className = 'fe-minimap';
+    var mmCanvas = document.createElement('canvas');
+    minimap.appendChild(mmCanvas);
+    var mmViewport = document.createElement('div');
+    mmViewport.className = 'fe-minimap-viewport';
+    minimap.appendChild(mmViewport);
+    paneWrap.appendChild(minimap);
+
+    pane.appendChild(paneWrap);
+    body.appendChild(pane);
+
+    if (r.error) {
+      editorDiv.innerHTML = '<div style="padding:20px;color:#f87171">Error: ' + _escAttr(r.error) + '</div>';
+      appendLine('[edit] [' + name + '] ' + r.error);
+      return;
+    }
+
+    var editor = CodeMirror(editorDiv, {
+      value: r.content,
+      mode: lang || null,
+      lineNumbers: true,
+      theme: 'material-darker',
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: false,
+      lineWrapping: true,
+      extraKeys: {
+        'Ctrl-S': function() { _feSavePane(name); },
+        'Cmd-S': function() { _feSavePane(name); },
+        'Escape': function() { _feClose(); }
+      }
+    });
+
+    var paneData = { server: name, editor: editor, original: r.content, headerEl: header, minimap: minimap, mmCanvas: mmCanvas, mmViewport: mmViewport };
+    _fePanes.push(paneData);
+
+    editor.on('cursorActivity', function() {
+      var pos = editor.getCursor();
+      document.getElementById('feCursor').textContent = name + ' — Ln ' + (pos.line + 1) + ', Col ' + (pos.ch + 1);
+    });
+    editor.on('change', function() {
+      var modified = editor.getValue() !== paneData.original;
+      header.querySelector('.fe-pane-mod').style.display = modified ? '' : 'none';
+      if (_feDiffActive) _feUpdateMinimap(paneData);
+    });
+    editor.on('scroll', function() {
+      if (_feDiffActive) _feUpdateMinimapViewport(paneData);
+    });
+
+    // Minimap click → jump to position
+    minimap.addEventListener('click', function(e) {
+      var rect = mmCanvas.getBoundingClientRect();
+      var ratio = e.clientY / rect.height;
+      var info = editor.getScrollInfo();
+      editor.scrollTo(null, ratio * info.height - info.clientHeight / 2);
+    });
+  });
+
+  // Size info
+  var totalSize = loaded.reduce(function(s, n) { return s + new Blob([results[n].content]).size; }, 0);
+  document.getElementById('feSize').textContent = loaded.length + ' file(s), ' + (totalSize > 1024 ? (totalSize / 1024).toFixed(1) + ' KB' : totalSize + ' B');
+
+  // Show Diff and Save All buttons only for multi-pane
+  var multiPane = _fePanes.length > 1;
+  document.getElementById('feDiffBtn').style.display = multiPane ? '' : 'none';
+  document.getElementById('feSaveAllBtn').style.display = multiPane ? '' : 'none';
+  _feDiffActive = false;
+  document.getElementById('feDiffBtn').classList.remove('diff-active');
+
+  document.getElementById('fileEditorOverlay').classList.add('show');
+  setTimeout(function() { _fePanes.forEach(function(p) { p.editor.refresh(); }); if (_fePanes[0]) _fePanes[0].editor.focus(); }, 50);
+}
+
+async function _feSavePane(serverName) {
+  var pane = _fePanes.find(function(p) { return p.server === serverName; });
+  if (!pane) return;
+  var content = pane.editor.getValue();
+  var result = await api('/api/write-file', { server: serverName, path: _fePath, content: content });
+  if (result.error) {
+    appendLine('[ERROR] [' + serverName + '] Save failed: ' + result.error);
+    return;
+  }
+  pane.original = content;
+  pane.headerEl.querySelector('.fe-pane-mod').style.display = 'none';
+  // Flash save confirmation on status bar
+  var status = document.querySelector('.file-editor-status');
+  status.style.background = '#16a34a';
+  document.getElementById('feCursor').textContent = serverName + ' — saved';
+  setTimeout(function() { status.style.background = '#007acc'; }, 600);
+}
+
+async function _feSaveAll() {
+  var modified = _fePanes.filter(function(p) { return p.editor.getValue() !== p.original; });
+  if (!modified.length) return;
+  for (var i = 0; i < modified.length; i++) {
+    await _feSavePane(modified[i].server);
+  }
+}
+
+function _feClose() {
+  var hasUnsaved = _fePanes.some(function(p) { return p.editor.getValue() !== p.original; });
+  if (hasUnsaved) {
+    if (!confirm('Unsaved changes will be lost. Close anyway?')) return;
+  }
+  _feClearDiff();
+  document.getElementById('fileEditorOverlay').classList.remove('show');
+  _fePanes = [];
+}
+
+// --- Diff comparison ---
+var _feDiffActive = false;
+var _feSyncScrollActive = false;
+var _feSyncScrolling = false;
+
+function _feToggleDiff() {
+  _feDiffActive = !_feDiffActive;
+  var btn = document.getElementById('feDiffBtn');
+  btn.classList.toggle('diff-active', _feDiffActive);
+  btn.textContent = _feDiffActive ? 'Diff ON' : 'Diff';
+  if (_feDiffActive) {
+    _feComputeDiff();
+    _feEnableSyncScroll();
+    _feShowMinimaps();
+  } else {
+    _feClearDiff();
+    _feDisableSyncScroll();
+    _feHideMinimaps();
+  }
+}
+
+function _feLCS(a, b) {
+  // Compute LCS length table for line arrays
+  var m = a.length, n = b.length;
+  var dp = [];
+  for (var i = 0; i <= m; i++) {
+    dp[i] = [];
+    for (var j = 0; j <= n; j++) dp[i][j] = 0;
+  }
+  for (var i = 1; i <= m; i++) {
+    for (var j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  return dp;
+}
+
+function _feLineDiff(baseLines, otherLines) {
+  // Returns per-line status for both sides: 'same', 'changed', 'added', 'removed'
+  var dp = _feLCS(baseLines, otherLines);
+  var baseStatus = new Array(baseLines.length).fill('removed');
+  var otherStatus = new Array(otherLines.length).fill('added');
+  var i = baseLines.length, j = otherLines.length;
+  while (i > 0 && j > 0) {
+    if (baseLines[i-1] === otherLines[j-1]) {
+      baseStatus[i-1] = 'same';
+      otherStatus[j-1] = 'same';
+      i--; j--;
+    } else if (dp[i-1][j] >= dp[i][j-1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  return { base: baseStatus, other: otherStatus };
+}
+
+function _feComputeDiff() {
+  if (_fePanes.length < 2) return;
+
+  // Clear previous diff marks and summaries
+  _fePanes.forEach(function(p) {
+    var cm = p.editor;
+    for (var i = 0; i < cm.lineCount(); i++) {
+      cm.removeLineClass(i, 'wrap', 'cm-diff-changed');
+      cm.removeLineClass(i, 'wrap', 'cm-diff-added');
+      cm.removeLineClass(i, 'wrap', 'cm-diff-removed');
+    }
+    var oldSummary = p.headerEl.querySelector('.fe-diff-summary');
+    if (oldSummary) oldSummary.remove();
+  });
+
+  // Collect all pane lines
+  var allLines = _fePanes.map(function(p) { return p.editor.getValue().split('\n'); });
+  var maxLen = Math.max.apply(null, allLines.map(function(l) { return l.length; }));
+  var diffCounts = new Array(_fePanes.length).fill(0);
+
+  // For each line number, compare across all panes
+  for (var line = 0; line < maxLen; line++) {
+    // Gather text at this line from each pane (undefined if pane is shorter)
+    var texts = allLines.map(function(lines) { return line < lines.length ? lines[line] : undefined; });
+
+    // Find the most common value (majority)
+    var freq = {};
+    var maxFreq = 0, majority = undefined;
+    texts.forEach(function(t) {
+      if (t === undefined) return;
+      freq[t] = (freq[t] || 0) + 1;
+      if (freq[t] > maxFreq) { maxFreq = freq[t]; majority = t; }
+    });
+
+    // Mark panes that differ from majority
+    for (var p = 0; p < _fePanes.length; p++) {
+      if (texts[p] === undefined) {
+        // Pane is shorter — this line is "missing"
+        // Don't mark (pane simply has fewer lines)
+        continue;
+      }
+      if (texts[p] !== majority) {
+        _fePanes[p].editor.addLineClass(line, 'wrap', 'cm-diff-changed');
+        diffCounts[p]++;
+      }
+    }
+  }
+
+  // Extra lines in shorter panes (panes that are longer than others)
+  var minLen = Math.min.apply(null, allLines.map(function(l) { return l.length; }));
+  for (var p = 0; p < _fePanes.length; p++) {
+    if (allLines[p].length > minLen) {
+      for (var line = minLen; line < allLines[p].length; line++) {
+        // Only mark if not already marked above
+        var info = _fePanes[p].editor.lineInfo(line);
+        if (!info.wrapClass || info.wrapClass.indexOf('cm-diff') < 0) {
+          _fePanes[p].editor.addLineClass(line, 'wrap', 'cm-diff-added');
+          diffCounts[p]++;
+        }
+      }
+    }
+  }
+
+  // Show summary per pane
+  _fePanes.forEach(function(pane, idx) {
+    var summary = document.createElement('span');
+    summary.className = 'fe-diff-summary';
+    if (diffCounts[idx] === 0) {
+      summary.innerHTML = '<span class="diff-same">identical</span>';
+    } else {
+      summary.innerHTML = '<span class="diff-diff">' + diffCounts[idx] + ' line(s) differ</span>';
+    }
+    pane.headerEl.appendChild(summary);
+  });
+
+  // Update minimaps after diff marks are applied
+  _fePanes.forEach(function(p) { _feUpdateMinimap(p); });
+
+  // Re-run diff on content change
+  _fePanes.forEach(function(pane) {
+    pane._diffChangeHandler = function() {
+      if (_feDiffActive) _feComputeDiff();
+    };
+    pane.editor.on('change', pane._diffChangeHandler);
+  });
+}
+
+function _feClearDiff() {
+  _fePanes.forEach(function(p) {
+    var cm = p.editor;
+    for (var i = 0; i < cm.lineCount(); i++) {
+      cm.removeLineClass(i, 'wrap', 'cm-diff-changed');
+      cm.removeLineClass(i, 'wrap', 'cm-diff-added');
+      cm.removeLineClass(i, 'wrap', 'cm-diff-removed');
+    }
+    var summary = p.headerEl.querySelector('.fe-diff-summary');
+    if (summary) summary.remove();
+    if (p._diffChangeHandler) {
+      p.editor.off('change', p._diffChangeHandler);
+      p._diffChangeHandler = null;
+    }
+  });
+}
+
+function _feEnableSyncScroll() {
+  if (_feSyncScrollActive) return;
+  _feSyncScrollActive = true;
+  _fePanes.forEach(function(pane, idx) {
+    pane._syncScrollHandler = function() {
+      if (_feSyncScrolling) return;
+      _feSyncScrolling = true;
+      var info = pane.editor.getScrollInfo();
+      // Sync by scroll percentage for files with different line counts
+      var pct = info.top / Math.max(info.height - info.clientHeight, 1);
+      _fePanes.forEach(function(other, j) {
+        if (j === idx) return;
+        var otherInfo = other.editor.getScrollInfo();
+        var targetTop = pct * Math.max(otherInfo.height - otherInfo.clientHeight, 0);
+        other.editor.scrollTo(info.left, targetTop);
+      });
+      _feSyncScrolling = false;
+    };
+    pane.editor.on('scroll', pane._syncScrollHandler);
+  });
+}
+
+function _feDisableSyncScroll() {
+  _feSyncScrollActive = false;
+  _fePanes.forEach(function(pane) {
+    if (pane._syncScrollHandler) {
+      pane.editor.off('scroll', pane._syncScrollHandler);
+      pane._syncScrollHandler = null;
+    }
+  });
+}
+
+// --- Diff minimap ---
+function _feShowMinimaps() {
+  _fePanes.forEach(function(p) {
+    p.minimap.style.display = '';
+    _feUpdateMinimap(p);
+    _feUpdateMinimapViewport(p);
+    p.editor.refresh();
+  });
+}
+
+function _feHideMinimaps() {
+  _fePanes.forEach(function(p) {
+    p.minimap.style.display = 'none';
+    p.editor.refresh();
+  });
+}
+
+function _feUpdateMinimap(paneData) {
+  var cm = paneData.editor;
+  var canvas = paneData.mmCanvas;
+  var container = paneData.minimap;
+  var h = container.clientHeight;
+  var w = container.clientWidth;
+  if (!h || !w) return;
+
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  var lineCount = cm.lineCount();
+  if (!lineCount) return;
+  var lineH = Math.max(h / lineCount, 0.5);
+  var minLineH = 1;
+  var effectiveH = Math.max(lineH, minLineH);
+
+  for (var i = 0; i < lineCount; i++) {
+    var y = (i / lineCount) * h;
+    var info = cm.lineInfo(i);
+    var wrapClass = info.wrapClass || '';
+
+    // Determine color
+    if (wrapClass.indexOf('cm-diff-changed') >= 0) {
+      ctx.fillStyle = 'rgba(234,179,8,0.7)';
+    } else if (wrapClass.indexOf('cm-diff-added') >= 0) {
+      ctx.fillStyle = 'rgba(34,197,94,0.7)';
+    } else if (wrapClass.indexOf('cm-diff-removed') >= 0) {
+      ctx.fillStyle = 'rgba(239,68,68,0.7)';
+    } else {
+      // Normal line — show faint content indicator based on line length
+      var text = cm.getLine(i) || '';
+      var len = Math.min(text.length / 120, 1);
+      ctx.fillStyle = 'rgba(180,180,180,' + (0.08 + len * 0.12) + ')';
+    }
+    ctx.fillRect(2, y, w - 4, Math.max(effectiveH - 0.5, 0.5));
+  }
+
+  _feUpdateMinimapViewport(paneData);
+}
+
+function _feUpdateMinimapViewport(paneData) {
+  var cm = paneData.editor;
+  var container = paneData.minimap;
+  var vp = paneData.mmViewport;
+  var containerH = container.clientHeight;
+  if (!containerH) return;
+
+  var scrollInfo = cm.getScrollInfo();
+  var totalH = scrollInfo.height;
+  if (totalH <= 0) return;
+
+  var topRatio = scrollInfo.top / totalH;
+  var visRatio = scrollInfo.clientHeight / totalH;
+
+  vp.style.top = (topRatio * containerH) + 'px';
+  vp.style.height = Math.max(visRatio * containerH, 8) + 'px';
+}
+
+function _isEditCommand(cmd) {
+  var prefix = _EDIT_CMD + ' ';
+  if (cmd.indexOf(prefix) === 0) return cmd.substring(prefix.length).trim();
+  return null;
+}
+function _isDownloadCommand(cmd) {
+  if (cmd.indexOf('dl ') === 0) return cmd.substring(3).trim();
+  return null;
+}
+
+async function downloadRemoteFile(names, filePath) {
+  appendLine('[download] Fetching ' + filePath + ' from ' + names.length + ' server(s)...');
+  var result = await api('/api/download-file', { servers: names, path: filePath });
+  if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+
+  var fileName = filePath.split('/').pop();
+  var keys = Object.keys(result.files);
+
+  // Pack into zip (single or multiple servers)
+  var zip = new JSZip();
+  var count = 0;
+  keys.forEach(function(name) {
+    var data = result.files[name];
+    if (data.error) {
+      appendLine('[download] [' + name + '] ERROR: ' + data.error);
+    } else if (data.binary) {
+      // Binary file — decode base64 to Uint8Array
+      var raw = atob(data.b64);
+      var bytes = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      zip.file(name + '/' + fileName, bytes);
+      count++;
+    } else {
+      zip.file(name + '/' + fileName, data.content);
+      count++;
+    }
+  });
+  if (count > 0) {
+    var blob = await zip.generateAsync({ type: 'blob' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = count === 1 ? fileName.replace(/(\.[^.]+)$/, '_' + keys[0] + '$1') + '.zip'
+      : fileName.replace(/\.[^.]+$/, '') + '_' + count + 'servers.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    appendLine('[download] Saved zip: ' + a.download + ' (' + count + ' file(s))');
+  }
+}
+
+function _triggerDownload(filename, content) {
+  var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // --- Scheduled Command ---
 var _schedTimer = null;
 var _schedCmd = '';
@@ -2059,17 +2811,119 @@ async function runCommand() {
   if (!raw) { appendLine('[ERROR] Enter a command first'); return; }
   var cmd = resolveAlias(raw);
 
+  // Intercept built-in commands: se /path (edit), dl /path (download)
+  var editPath = _isEditCommand(cmd);
+  if (editPath) {
+    if (!editPath.startsWith('/') && _cwd) editPath = _cwd + editPath;
+    var names = getSelectedServers();
+    if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+    input.value = '';
+    openFileEditor(names, editPath);
+    return;
+  }
+  var dlPath = _isDownloadCommand(cmd);
+  if (dlPath) {
+    if (!dlPath.startsWith('/') && _cwd) dlPath = _cwd + dlPath;
+    var names = getSelectedServers();
+    if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+    input.value = '';
+    downloadRemoteFile(names, dlPath);
+    return;
+  }
+
   var err = checkInteractiveCmd(cmd);
   if (err) { appendLine('[ERROR] ' + err); return; }
+
+  // Track cwd changes from cd/ls commands
+  _cwdDetectFromCommand(cmd);
 
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
 
+  // For cd-only commands, just update cwd without running
+  if (/^\s*cd\s/.test(cmd)) {
+    appendLine('$ ' + cmd);
+    appendLine('[cwd] ' + _cwd);
+    input.value = '';
+    return;
+  }
+
+  // Prepend cwd for server-side execution
+  var serverCmd = _cwdPrependCmd(cmd);
+
+  if (isModifyingCmd(cmd)) {
+    var ok = await modalConfirm('Confirm Dangerous Command',
+      '<div style="margin-bottom:8px;color:#b91c1c;font-weight:bold">This command may modify the system:</div>'
+      + '<pre style="background:#f8f8f8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0;white-space:pre-wrap">' + _escAttr(cmd) + '</pre>'
+      + (_cwd ? '<div style="font-size:12px;color:#888;margin-bottom:4px">Working directory: ' + _escAttr(_cwd) + '</div>' : '')
+      + '<div style="font-size:12px;color:#555">Servers (' + names.length + '): <b>' + _escAttr(names.join(', ')) + '</b></div>');
+    if (!ok) return;
+  }
+
   appendLine('$ ' + (cmd !== raw ? raw + '  \u2192  ' + cmd : cmd));
-  var result = await api('/api/run-command', { servers: names, command: cmd });
+  var result = await api('/api/run-command', { servers: names, command: serverCmd });
   if (result.error) { appendLine('[ERROR] ' + result.error); return; }
   input.value = '';
   setTimeout(loadCmdHistory, 500);
+}
+
+async function runCompare() {
+  _touchAdhoc();
+  var input = document.getElementById('cmdInput');
+  var raw = input.value.trim();
+  if (!raw) { appendLine('[ERROR] Enter a command first'); return; }
+  var cmd = resolveAlias(raw);
+
+  // Intercept built-in commands
+  if (_isEditCommand(cmd)) { appendLine('[ERROR] "se" is an editor command, not comparable — use Run instead'); return; }
+  if (_isDownloadCommand(cmd)) { appendLine('[ERROR] "dl" is a download command, not comparable — use Run instead'); return; }
+
+  var err = checkInteractiveCmd(cmd);
+  if (err) { appendLine('[ERROR] ' + err); return; }
+
+  var names = getSelectedServers();
+  if (names.length < 2) { appendLine('[ERROR] Compare needs at least 2 servers selected'); return; }
+
+  var serverCmd = _cwdPrependCmd(cmd);
+  appendLine('[Compare] Running "' + cmd + '" on ' + names.length + ' servers...');
+  var result = await api('/api/run-command-compare', { servers: names, command: serverCmd });
+  if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+
+  // Build compare view
+  document.getElementById('cmpCmd').textContent = cmd;
+  var body = document.getElementById('compareBody');
+  body.innerHTML = '';
+  names.forEach(function(name) {
+    var data = result.results[name];
+    if (!data) return;
+    var col = document.createElement('div');
+    col.className = 'compare-col';
+    var exitCls = data.exit_code === 0 ? 'ok' : 'fail';
+    var exitText = data.exit_code === 0 ? 'OK' : 'exit ' + data.exit_code;
+    col.innerHTML = '<div class="compare-col-header">' + _escAttr(name)
+      + '<span class="cmp-exit ' + exitCls + '">' + exitText + '</span></div>'
+      + '<div class="compare-col-body"></div>';
+    col.querySelector('.compare-col-body').textContent = data.lines.join('\n');
+    body.appendChild(col);
+  });
+  document.getElementById('compareOverlay').classList.add('show');
+  input.value = '';
+
+  // Sync scroll across compare columns
+  var cols = body.querySelectorAll('.compare-col-body');
+  var syncing = false;
+  cols.forEach(function(col) {
+    col.addEventListener('scroll', function() {
+      if (syncing) return;
+      syncing = true;
+      var pct = col.scrollTop / Math.max(col.scrollHeight - col.clientHeight, 1);
+      cols.forEach(function(other) {
+        if (other === col) return;
+        other.scrollTop = pct * Math.max(other.scrollHeight - other.clientHeight, 0);
+      });
+      syncing = false;
+    });
+  });
 }
 
 async function uploadFiles() {
@@ -2651,6 +3505,560 @@ function _updateServerDots(statusMap) {
   });
 }
 
+// --- File path detection and context menu ---
+var _FP_RE = /(\/(?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+(?:\.[a-zA-Z0-9]+)?\/?)/g;
+// Detect filenames in ls -l output: ... HH:MM filename or ... YYYY filename
+var _LS_FILE_RE = /\d{2}:\d{2}\s+(.+)$|[A-Z][a-z]{2}\s+\d+\s+\d{4}\s+(.+)$/;
+var _fpCurrentPath = '';
+var _fpCurrentServer = '';
+var _fpLastDir = '';  // directory context from command headers
+var _fpIsListCmd = false;  // whether last command was ls/ll/find
+
+function _isLikelyFilePath(p) {
+  var parts = p.split('/').filter(Boolean);
+  if (parts.length < 1) return false;
+  if (/^(etc|var|tmp|opt|usr|home|root|srv|proc|sys|dev|run|mnt|media|boot)$/.test(parts[0])) return true;
+  if (parts.length < 2) return false;
+  var last = parts[parts.length - 1];
+  if (last.indexOf('.') > 0) return true;
+  return false;
+}
+function _looksLikeDir(path) {
+  // No extension in last segment → likely a directory (e.g. /home/testuser, /var/log)
+  var p = path.replace(/\/+$/, '');
+  var last = p.substring(p.lastIndexOf('/') + 1);
+  return last.indexOf('.') < 0;
+}
+
+function _extractDirFromCmd(text) {
+  // Match: ── [server] $ ls -ltr /dir ── or ls -l /dir or ll /dir or find /dir ...
+  var m = text.match(/(?:\$\s+)?(?:ls|find|ll)\s+(?:-[^\s]*\s+)*(\/[^\s─]*)/);
+  if (m) {
+    var d = m[1];
+    if (!d.endsWith('/')) d += '/';
+    return d;
+  }
+  return '';
+}
+
+function _fpDblClick(e) {
+  e.stopPropagation();
+  e.preventDefault();
+  clearTimeout(_fpClickTimer);
+  document.getElementById('fpMenu').classList.remove('show');
+  var span = e.currentTarget;
+  var path = span.dataset.path;
+  if (!path) return;
+  // Resolve server from line context
+  var line = span.closest('.out-line') || span.closest('.line');
+  var prefixEl = line ? line.querySelector('.server-prefix') : null;
+  var sysPrefixes = ['edit', 'copy', 'download', 'delete', 'upload', 'compare', 'INFO', 'WARN'];
+  var rawServer = prefixEl ? prefixEl.textContent.replace(/^\[|\]\s*$/g, '') : '';
+  var server = sysPrefixes.indexOf(rawServer) >= 0 ? '' : rawServer;
+  var names = server ? [server] : getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+  // Resolve relative path via pwd if needed
+  if (!path.startsWith('/')) {
+    api('/api/run-command', { servers: [names[0]], command: 'pwd' }).then(function(r) {
+      if (r && r.results) {
+        var pwd = (r.results[names[0]] || '').trim();
+        if (pwd) {
+          var dir = pwd.endsWith('/') ? pwd : pwd + '/';
+          path = dir + path;
+          _cwdSet(dir);
+        }
+      }
+      var dirPath = path.endsWith('/') ? path : path + '/';
+      _cwdSet(dirPath);
+      api('/api/run-command', { servers: names, command: 'ls -ltr ' + dirPath });
+    });
+    return;
+  }
+  var dirPath = path.endsWith('/') ? path : path + '/';
+  _cwdSet(dirPath);
+  api('/api/run-command', { servers: names, command: 'ls -ltr ' + dirPath });
+}
+
+function _makeFpSpan(displayText, fullPath, isDir) {
+  // For directory paths, make each segment independently clickable (with / root)
+  // Only split when displayText is the full path (absolute path in output), not ls filenames
+  if (isDir && displayText === fullPath && fullPath.startsWith('/') && fullPath.split('/').filter(Boolean).length >= 1) {
+    var frag = document.createDocumentFragment();
+    var parts = fullPath.replace(/\/+$/, '').split('/').filter(Boolean);
+    // Leading / as clickable root
+    var rootSpan = document.createElement('span');
+    rootSpan.className = 'fp-link fp-seg';
+    rootSpan.textContent = '/';
+    rootSpan.dataset.path = '/';
+    rootSpan.dataset.dir = '1';
+    rootSpan.addEventListener('click', _fpOnClick);
+    rootSpan.addEventListener('dblclick', _fpDblClick);
+    frag.appendChild(rootSpan);
+    for (var i = 0; i < parts.length; i++) {
+      var cumPath = '/' + parts.slice(0, i + 1).join('/') + '/';
+      var seg = document.createElement('span');
+      seg.className = 'fp-link fp-seg';
+      seg.textContent = parts[i];
+      seg.dataset.path = cumPath;
+      seg.dataset.dir = '1';
+      seg.addEventListener('click', _fpOnClick);
+      seg.addEventListener('dblclick', _fpDblClick);
+      frag.appendChild(seg);
+      if (i < parts.length - 1) {
+        var sep = document.createElement('span');
+        sep.className = 'fp-sep';
+        sep.textContent = '/';
+        frag.appendChild(sep);
+      }
+    }
+    if (fullPath.endsWith('/')) {
+      var trail = document.createElement('span');
+      trail.className = 'fp-sep';
+      trail.textContent = '/';
+      frag.appendChild(trail);
+    }
+    return frag;
+  }
+  var span = document.createElement('span');
+  span.className = 'fp-link';
+  span.textContent = displayText;
+  span.dataset.path = fullPath;
+  if (isDir) {
+    span.dataset.dir = '1';
+    span.addEventListener('dblclick', _fpDblClick);
+  }
+  span.addEventListener('click', _fpOnClick);
+  return span;
+}
+
+function _appendWithPaths(parent, text) {
+  // 1. Try absolute paths
+  var isLsDir = /^d/.test(text); // ls -l directory line
+  var match, last = 0;
+  _FP_RE.lastIndex = 0;
+  var found = false;
+  while ((match = _FP_RE.exec(text)) !== null) {
+    var path = match[1];
+    if (!_isLikelyFilePath(path)) continue;
+    found = true;
+    var dirFlag = path.endsWith('/') || isLsDir || _looksLikeDir(path);
+    if (match.index > last) parent.appendChild(document.createTextNode(text.slice(last, match.index)));
+    parent.appendChild(_makeFpSpan(path, path, dirFlag));
+    last = match.index + match[0].length;
+  }
+  if (found) {
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+    return;
+  }
+  // 2. Try ls -l filename detection
+  if (_fpLastDir || _fpIsListCmd) {
+    var lsMatch = text.match(_LS_FILE_RE);
+    if (lsMatch) {
+      var fileName = (lsMatch[1] || lsMatch[2] || '').trim();
+      // Handle symlinks: name -> target
+      var arrow = fileName.indexOf(' -> ');
+      if (arrow > 0) fileName = fileName.substring(0, arrow);
+      if (fileName && fileName.indexOf(' ') < 0) {
+        var fullPath = _fpLastDir ? _fpLastDir + fileName : fileName;
+        // Detect directory: ls -l lines starting with 'd'
+        var isDir = /^d/.test(text);
+        var idx = text.lastIndexOf(fileName);
+        if (idx >= 0) {
+          parent.appendChild(document.createTextNode(text.substring(0, idx)));
+          parent.appendChild(_makeFpSpan(fileName, fullPath, isDir));
+          if (idx + fileName.length < text.length) parent.appendChild(document.createTextNode(text.substring(idx + fileName.length)));
+          return;
+        }
+      }
+    }
+    // 3. Try plain ls output (just a filename, no -l details)
+    // Reject lines with spaces or colons (error messages, not filenames)
+    var plainName = text.trim();
+    if (plainName && !/[\s:]/.test(plainName) && !/^total$/.test(plainName)) {
+      var fullPath = _fpLastDir ? _fpLastDir + plainName : plainName;
+      var isDir = _looksLikeDir(plainName);
+      parent.appendChild(_makeFpSpan(plainName, fullPath, isDir));
+      return;
+    }
+  }
+  parent.appendChild(document.createTextNode(text));
+}
+
+function _linkifyPaths(container) {
+  // Check if this line is a directory entry from ls -l
+  var fullText = container.textContent || '';
+  // Strip timestamp and server prefix to check if line starts with 'd'
+  var stripped = fullText.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*(\[[^\]]+\]\s*)?/, '');
+  var isLsDir = /^d/.test(stripped);
+
+  var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+  var textNodes = [];
+  while (walker.nextNode()) {
+    var node = walker.currentNode;
+    if (node.parentNode.classList && (node.parentNode.classList.contains('ts') || node.parentNode.classList.contains('server-prefix'))) continue;
+    if (_FP_RE.test(node.textContent)) textNodes.push(node);
+    _FP_RE.lastIndex = 0;
+  }
+  textNodes.forEach(function(node) {
+    var text = node.textContent;
+    var frag = document.createDocumentFragment();
+    var match, last = 0;
+    _FP_RE.lastIndex = 0;
+    var replaced = false;
+    while ((match = _FP_RE.exec(text)) !== null) {
+      var path = match[1];
+      if (!_isLikelyFilePath(path)) continue;
+      replaced = true;
+      var dirFlag = path.endsWith('/') || isLsDir || _looksLikeDir(path);
+      if (match.index > last) frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+      var fpEl = _makeFpSpan(path, path, dirFlag);
+      if (node.parentNode.style && node.parentNode.style.cssText) {
+        var css = node.parentNode.style.cssText;
+        if (fpEl.nodeType === 11) { // DocumentFragment — apply to each child
+          Array.from(fpEl.children).forEach(function(ch) { ch.style.cssText = css; });
+        } else { fpEl.style.cssText = css; }
+      }
+      frag.appendChild(fpEl);
+      last = match.index + match[0].length;
+    }
+    if (replaced) {
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    }
+  });
+  // If no absolute paths found, try plain ls filename detection
+  if (!textNodes.length && (_fpLastDir || _fpIsListCmd)) {
+    var plainText = stripped.trim();
+    if (plainText && !/[\s:]/.test(plainText) && !/^total$/.test(plainText)) {
+      // Find the text node with this content (skip ts/prefix nodes)
+      var walker2 = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+      while (walker2.nextNode()) {
+        var nd = walker2.currentNode;
+        if (nd.parentNode.classList && (nd.parentNode.classList.contains('ts') || nd.parentNode.classList.contains('server-prefix'))) continue;
+        var fname = nd.textContent.trim();
+        if (fname && !/[\s:]/.test(fname) && !/^total$/.test(fname)) {
+          var fullPath = _fpLastDir ? _fpLastDir + fname : fname;
+          var isDir = _looksLikeDir(fname);
+          var span = _makeFpSpan(fname, fullPath, isDir);
+          if (nd.parentNode.style && nd.parentNode.style.cssText) {
+            var css = nd.parentNode.style.cssText;
+            if (span.nodeType === 11) { Array.from(span.children).forEach(function(ch) { ch.style.cssText = css; }); }
+            else { span.style.cssText = css; }
+          }
+          nd.parentNode.replaceChild(span, nd);
+          break;
+        }
+      }
+    }
+  }
+}
+
+var _fpIsDir = false;
+var _fpClickTimer = null;
+
+function _fpOnClick(e) {
+  e.stopPropagation();
+  // For directories, delay to allow dblclick to cancel
+  if (e.currentTarget.dataset.dir) {
+    var evt = e;
+    var target = e.currentTarget;
+    clearTimeout(_fpClickTimer);
+    _fpClickTimer = setTimeout(function() { _fpShowMenu(evt, target); }, 250);
+    return;
+  }
+  _fpShowMenu(e, e.currentTarget);
+}
+
+function _fpShowMenu(e, target) {
+  var path = target.dataset.path;
+  _fpCurrentPath = path;
+  _fpIsDir = !!target.dataset.dir;
+  var line = target.closest('.out-line') || target.closest('.line');
+  var prefixEl = line ? line.querySelector('.server-prefix') : null;
+  var _fpSystemPrefixes = ['edit', 'copy', 'download', 'delete', 'upload', 'compare', 'INFO', 'WARN'];
+  var rawServer = prefixEl ? prefixEl.textContent.replace(/^\[|\]\s*$/g, '') : '';
+  _fpCurrentServer = _fpSystemPrefixes.indexOf(rawServer) >= 0 ? '' : rawServer;
+  var menu = document.getElementById('fpMenu');
+
+  // Show/hide items based on file vs directory
+  menu.querySelectorAll('.fp-file-only').forEach(function(el) { el.style.display = _fpIsDir ? 'none' : ''; });
+  menu.querySelectorAll('.fp-dir-only').forEach(function(el) { el.style.display = _fpIsDir ? '' : 'none'; });
+
+  var x = e.clientX, y = e.clientY;
+  menu.classList.add('show');
+  var rect = menu.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
+  if (y + rect.height > window.innerHeight) y = y - rect.height;
+  if (x < 0) x = 8;
+  if (y < 0) y = 8;
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+}
+
+document.addEventListener('click', function(e) {
+  var menu = document.getElementById('fpMenu');
+  if (menu && !menu.contains(e.target) && !e.target.classList.contains('fp-link')) {
+    menu.classList.remove('show');
+  }
+});
+
+async function _fpAction(action) {
+  document.getElementById('fpMenu').classList.remove('show');
+  var path = _fpCurrentPath;
+  if (!path) return;
+  if (action === 'copyName') {
+    var name = path.replace(/\/+$/, '').split('/').pop();
+    try { navigator.clipboard.writeText(name); } catch(e) {}
+    return;
+  }
+  if (action === 'copyPath') {
+    try { navigator.clipboard.writeText(path); } catch(e) {}
+    return;
+  }
+
+  var names = _fpCurrentServer ? [_fpCurrentServer] : getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No server context — select servers first'); return; }
+
+  // Resolve relative paths by querying pwd on the server
+  if (path && !path.startsWith('/')) {
+    try {
+      var pwdResult = await api('/api/run-command', { servers: [names[0]], command: 'pwd' });
+      if (pwdResult && pwdResult.results) {
+        var pwdLine = (pwdResult.results[names[0]] || '').trim();
+        if (pwdLine) {
+          var dir = pwdLine.endsWith('/') ? pwdLine : pwdLine + '/';
+          path = dir + path;
+          _fpCurrentPath = path;
+          _cwdSet(dir);
+        }
+      }
+    } catch(e) {}
+  }
+  if (!path.startsWith('/')) { appendLine('[ERROR] Cannot resolve path — try setting cwd first (cd /path)'); return; }
+
+  if (action === 'copy') {
+    appendLine('[copy] Reading ' + path + ' from ' + names[0] + '...');
+    var result = await api('/api/read-file', { server: names[0], path: path });
+    if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+    try {
+      await navigator.clipboard.writeText(result.content);
+      appendLine('[copy] File content copied to clipboard (' + result.content.length + ' chars)');
+    } catch(e) { appendLine('[ERROR] Clipboard write failed: ' + e.message); }
+  } else if (action === 'openDir') {
+    var dirPath = path.endsWith('/') ? path : path + '/';
+    _cwdSet(dirPath);
+    var cmd = 'ls -ltr ' + dirPath;
+    var input = document.getElementById('cmdInput');
+    input.value = '';
+    await api('/api/run-command', { servers: names, command: cmd });
+  } else if (action === 'parentDir') {
+    var dirPath = path.replace(/\/+$/, '');
+    var parent = dirPath.substring(0, dirPath.lastIndexOf('/'));
+    if (!parent) parent = '/';
+    if (!parent.endsWith('/')) parent += '/';
+    _cwdSet(parent);
+    var cmd = 'ls -ltr ' + parent;
+    var input = document.getElementById('cmdInput');
+    input.value = '';
+    await api('/api/run-command', { servers: names, command: cmd });
+  } else if (action === 'edit') {
+    openFileEditor(names, path);
+  } else if (action === 'editAll') {
+    var allNames = getSelectedServers();
+    if (!allNames.length) { appendLine('[ERROR] No servers selected'); return; }
+    var ok = await modalConfirm(
+      'Open on All Servers',
+      'Open <code>' + _escAttr(path) + '</code> on <b>' + allNames.length + '</b> server(s)?<br><br>'
+      + allNames.map(function(n) { return '&bull; ' + _escAttr(n); }).join('<br>')
+    );
+    if (!ok) return;
+    openFileEditor(allNames, path);
+  } else if (action === 'download') {
+    downloadRemoteFile(names, path);
+  } else if (action === 'delete') {
+    var ok = await modalConfirm(
+      'Delete Remote File',
+      'Delete <code>' + _escAttr(path) + '</code> on <b>' + names.join(', ') + '</b>?<br><br>'
+      + '<b style="color:#dc2626">This action cannot be undone.</b>'
+    );
+    if (!ok) return;
+    appendLine('[delete] Deleting ' + path + ' on ' + names.join(', ') + '...');
+    var result = await api('/api/delete-remote-file', { servers: names, path: path });
+    if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+    var results = result.results || {};
+    Object.keys(results).forEach(function(name) {
+      if (results[name].error) appendLine('[ERROR] [' + name + '] ' + results[name].error);
+      else appendLine('[delete] [' + name + '] Deleted');
+    });
+  }
+}
+
+// --- Current Working Directory tracking ---
+var _cwd = '';
+
+function _cwdRender() {
+  var bar = document.getElementById('cwdBar');
+  var bc = document.getElementById('cwdBreadcrumb');
+  if (!_cwd) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = '';
+  var parts = _cwd.split('/').filter(Boolean);
+  var html = '<span class="cwd-seg" onclick="_cwdNavigate(\'/\')" title="/">/</span>';
+  for (var i = 0; i < parts.length; i++) {
+    var partial = '/' + parts.slice(0, i + 1).join('/');
+    html += '<span class="cwd-sep">/</span><span class="cwd-seg" onclick="_cwdNavigate(\'' + partial + '/\')" title="' + partial + '">' + parts[i] + '</span>';
+  }
+  bc.innerHTML = html;
+}
+
+function _cwdNavigate(path) {
+  _cwdSet(path);
+  // Auto-run ls -ltr in the new directory
+  var names = getSelectedServers();
+  if (names.length) {
+    var cmd = 'ls -ltr ' + path;
+    document.getElementById('cmdInput').value = cmd;
+    runCommand();
+  }
+}
+
+function _cwdSet(path) {
+  if (!path) path = '/';
+  // Ensure trailing slash
+  if (!path.endsWith('/')) path += '/';
+  _cwd = path;
+  _fpLastDir = path;
+  _cwdRender();
+}
+
+function _cwdReset() {
+  _cwd = '';
+  _fpLastDir = '';
+  _cwdRender();
+}
+
+async function _cwdSync() {
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+  var result = await api('/api/run-command-compare', { servers: [names[0]], command: 'pwd' });
+  if (result.error) { appendLine('[ERROR] ' + result.error); return; }
+  var data = result.results[names[0]];
+  if (data && data.lines && data.lines.length) {
+    var dir = data.lines[0].trim();
+    if (dir.startsWith('/')) {
+      _cwdSet(dir);
+      appendLine('[cwd] Synced: ' + _cwd);
+    }
+  }
+}
+
+function _cwdDetectFromCommand(cmd) {
+  // Detect cd commands and update cwd
+  var m = cmd.match(/^\s*cd\s+(\/[^\s;&|]+)/);
+  if (m) {
+    _cwdSet(m[1]);
+    return;
+  }
+  // cd with relative path
+  var m2 = cmd.match(/^\s*cd\s+([^\s;&|]+)/);
+  if (m2 && _cwd) {
+    var rel = m2[1];
+    if (rel === '..') {
+      var parts = _cwd.split('/').filter(Boolean);
+      parts.pop();
+      _cwdSet('/' + parts.join('/'));
+    } else if (rel === '~' || rel === '') {
+      // Can't resolve ~ without server, ignore
+    } else if (!rel.startsWith('/')) {
+      _cwdSet(_cwd + rel);
+    }
+    return;
+  }
+  // Detect ls commands with directory argument → update cwd
+  var m3 = cmd.match(/(?:ls|ll)\s+(?:-[^\s]*\s+)*(\/[^\s]+)/);
+  if (m3) {
+    var dir = m3[1];
+    if (!dir.endsWith('/')) dir += '/';
+    _cwdSet(dir);
+  }
+}
+
+function _cwdPrependCmd(cmd) {
+  // If cwd is set and command doesn't start with cd or absolute path command, prepend cd
+  if (!_cwd || _cwd === '/') return cmd;
+  // Don't prepend for built-in commands
+  if (/^\s*(se|dl)\s/.test(cmd)) return cmd;
+  // Don't prepend if command already has cd
+  if (/^\s*cd\s/.test(cmd)) return cmd;
+  return 'cd ' + _cwd.replace(/\/$/, '') + ' && ' + cmd;
+}
+
+// --- Header tips rotation ---
+var _tips = [
+  '<kbd>se</kbd> /path — Edit remote file (text, multi-server side-by-side + Diff)',
+  '<kbd>dl</kbd> /path — Download remote file (auto zip, supports binary)',
+  'Click file paths in output for actions: copy, edit, download, delete',
+  '<kbd>Compare</kbd> — Run command on all servers, view results side-by-side',
+  'Dangerous commands (rm, kill, reboot...) require confirmation before running',
+  '<kbd>★</kbd> Favorite commands for quick reuse',
+  '<kbd>Aliases</kbd> — Define short names for common commands, auto-expand on input',
+  '<kbd>Schedule</kbd> — Run commands on a timer, with optional silent mode',
+  'Binary files: download and delete only. Text files: edit, copy, download, delete',
+  '<kbd>Diff</kbd> — Multi-server file comparison with color highlights, sync scroll, minimap'
+];
+var _tipIdx = 0;
+function _rotateTip() {
+  var el = document.getElementById('headerTips');
+  el.style.opacity = '0';
+  setTimeout(function() {
+    el.innerHTML = _tips[_tipIdx];
+    el.style.opacity = '1';
+    _tipIdx = (_tipIdx + 1) % _tips.length;
+  }, 300);
+}
+_rotateTip();
+setInterval(_rotateTip, 8000);
+
+function _showHelpModal() {
+  var html = '<div style="line-height:1.8;font-size:13px">'
+    + '<div style="font-weight:bold;color:#2563eb;margin-bottom:8px;font-size:14px">Commands</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;font-family:Consolas,monospace">'
+    + '<tr><td style="padding:3px 8px;color:#2563eb;white-space:nowrap"><b>se</b> /path</td><td style="padding:3px 8px;color:#666">Edit remote file in editor. Multi-server: side-by-side with Diff + minimap. Text files only.</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;color:#2563eb;white-space:nowrap"><b>dl</b> /path</td><td style="padding:3px 8px;color:#666">Download remote file as zip. Supports binary files. Multi-server: one zip with folders per server.</td></tr>'
+    + '</table>'
+    + '<div style="font-weight:bold;color:#2563eb;margin:12px 0 8px;font-size:14px">Toolbar Buttons</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Run</b></td><td style="padding:3px 8px;color:#666">Execute command on selected servers</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Compare</b></td><td style="padding:3px 8px;color:#666">Run command on all servers, view results side-by-side with sync scroll</td></tr>'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>★ Favorites</b></td><td style="padding:3px 8px;color:#666">Pin and reuse common commands, stored per config</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Aliases</b></td><td style="padding:3px 8px;color:#666">Short names for commands, auto-expand on input, drag to reorder</td></tr>'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Schedule</b></td><td style="padding:3px 8px;color:#666">Run commands on a timer. Silent mode: log to file without output panel</td></tr>'
+    + '</table>'
+    + '<div style="font-weight:bold;color:#2563eb;margin:12px 0 8px;font-size:14px">File Path Actions</div>'
+    + '<div style="font-size:12px;color:#666;margin-bottom:6px">Click any <span style="text-decoration:underline dotted;color:#2563eb">file path</span> in command output to see actions:</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Copy name / path</b></td><td style="padding:3px 8px;color:#666">Copy filename or full path to clipboard</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Copy file content</b></td><td style="padding:3px 8px;color:#666">Read remote file and copy to clipboard (text only)</td></tr>'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Open in editor</b></td><td style="padding:3px 8px;color:#666">Open in se editor (text only)</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Open on all servers</b></td><td style="padding:3px 8px;color:#666">Open same file on all selected servers for comparison (text only)</td></tr>'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Download</b></td><td style="padding:3px 8px;color:#666">Download as zip (text + binary)</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Delete</b></td><td style="padding:3px 8px;color:#666">Delete remote file with confirmation (text + binary)</td></tr>'
+    + '</table>'
+    + '<div style="font-weight:bold;color:#2563eb;margin:12px 0 8px;font-size:14px">Editor Features</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Diff</b></td><td style="padding:3px 8px;color:#666">Color-coded comparison: <span style="color:#eab308">yellow</span> = different, <span style="color:#22c55e">green</span> = added, <span style="color:#ef4444">red</span> = removed</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Sync scroll</b></td><td style="padding:3px 8px;color:#666">All panes scroll together when Diff is on</td></tr>'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Minimap</b></td><td style="padding:3px 8px;color:#666">Right-side overview with diff markers, click to jump</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Ctrl/Cmd+S</b></td><td style="padding:3px 8px;color:#666">Save current pane</td></tr>'
+    + '</table>'
+    + '<div style="margin-top:12px;font-size:11px;color:#aaa">Dangerous commands (rm, kill, reboot, systemctl restart...) require confirmation. PSMP proxy mode fully supported.</div>'
+    + '</div>';
+  document.querySelector('.modal').classList.add('wide');
+  _showModal('SSH Ops — Help', html, [{ text: 'Close', cls: 'primary', action: function() {} }]);
+}
+
 // --- Init ---
 connectWS();
 loadConfigs();
@@ -2659,6 +4067,7 @@ loadTasks();
 loadCmdHistory();
 loadUploadHistory();
 loadAliases();
+_renderFavorites();
 // Restore T toggle state
 try {
   if (localStorage.getItem('ssh-ops-hide-ts')) {

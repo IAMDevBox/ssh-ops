@@ -20,7 +20,7 @@ from ruamel.yaml import YAMLError as _RuamelYAMLError
 from ssh_ops.yaml_util import load_yaml, dump_yaml, dump_yaml_str, safe_load_str
 
 from .config import AppConfig, TaskConfig, check_interactive_command, is_modifying_command
-from .executor import ConnectionPool, TaskExecutor, _exhaust_generator
+from .executor import ConnectionPool, TaskExecutor, _exhaust_generator, _shell_quote
 from .logger import ExecLogger
 
 MAX_HISTORY = 5000  # max lines to keep in memory
@@ -1013,6 +1013,185 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         thread.start()
 
         return {"status": "started"}
+
+    @app.post("/api/run-command-compare")
+    async def run_command_compare(body: dict):
+        """Run command and return per-server results for comparison.
+        Body: {"servers": [...], "command": "..."}
+        Returns: {"results": {"server1": {"lines": [...], "exit_code": 0}, ...}}
+        """
+        server_names = body.get("servers", [])
+        command = body.get("command", "").strip()
+        if not command:
+            return {"error": "no command provided"}
+        interactive_err = check_interactive_command(command)
+        if interactive_err:
+            return {"error": interactive_err}
+        servers = config.filter_servers(server_names)
+        if not servers:
+            return {"error": "no servers matched"}
+
+        import concurrent.futures
+
+        def _run_one(server):
+            session = pool.get_session(server.name)
+            if not session:
+                return server.name, {"lines": ["Not connected"], "exit_code": -1}
+            try:
+                lines, exit_code = _exhaust_generator(session.exec_command(command))
+                return server.name, {"lines": lines, "exit_code": exit_code or 0}
+            except Exception as e:
+                return server.name, {"lines": [str(e)], "exit_code": -1}
+
+        results = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(servers)) as ex:
+            futures = [ex.submit(_run_one, s) for s in servers]
+            for f in concurrent.futures.as_completed(futures):
+                name, data = f.result()
+                results[name] = data
+
+        return {"results": results}
+
+    @app.post("/api/read-file")
+    async def read_remote_file(body: dict):
+        """Read a file from a remote server. Body: {"server": "name", "path": "/abs/path"}"""
+        server_name = body.get("server", "")
+        file_path = body.get("path", "").strip()
+        if not file_path or not file_path.startswith("/"):
+            return {"error": "path must be an absolute path"}
+        session = pool.get_session(server_name)
+        if not session:
+            return {"error": f"Server '{server_name}' not connected"}
+        try:
+            # Check if path is a directory
+            dir_lines, _ = _exhaust_generator(
+                session.exec_command(f"test -d {_shell_quote(file_path)} && echo DIR", timeout=10)
+            )
+            if dir_lines and "DIR" in dir_lines[0]:
+                return {"error": "Is a directory — cannot read as text"}
+            # Check if file is binary
+            type_lines, _ = _exhaust_generator(
+                session.exec_command(f"file -b --mime-encoding {_shell_quote(file_path)}", timeout=10)
+            )
+            encoding = (type_lines[0] if type_lines else "").strip().lower()
+            if encoding == "binary":
+                return {"error": "Binary file — cannot read as text"}
+
+            lines, exit_code = _exhaust_generator(
+                session.exec_command(f"cat {_shell_quote(file_path)}", timeout=30)
+            )
+            if exit_code and exit_code != 0:
+                err_text = "\n".join(lines) if lines else f"exit code {exit_code}"
+                return {"error": err_text}
+            return {"content": "\n".join(lines), "path": file_path, "server": server_name}
+        except Exception as e:
+            return {"error": str(e)}
+
+    @app.post("/api/write-file")
+    async def write_remote_file(body: dict):
+        """Write content to a remote file. Body: {"server": "name", "path": "/abs/path", "content": "..."}"""
+        server_name = body.get("server", "")
+        file_path = body.get("path", "").strip()
+        content = body.get("content", "")
+        if not file_path or not file_path.startswith("/"):
+            return {"error": "path must be an absolute path"}
+        session = pool.get_session(server_name)
+        if not session:
+            return {"error": f"Server '{server_name}' not connected"}
+        try:
+            # Write via base64 to handle special characters safely
+            import base64
+            b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+            cmd = f"echo {_shell_quote(b64)} | base64 -d > {_shell_quote(file_path)}"
+            lines, exit_code = _exhaust_generator(
+                session.exec_command(cmd, timeout=30)
+            )
+            if exit_code and exit_code != 0:
+                err_text = "\n".join(lines) if lines else f"exit code {exit_code}"
+                return {"error": err_text}
+            await _broadcast(f"[{server_name}] File saved: {file_path}")
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    @app.post("/api/download-file")
+    async def download_remote_file(body: dict):
+        """Download a file from remote server(s). Body: {"servers": [...], "path": "/abs/path"}
+        Returns: {"files": {"server1": {"content": "...", "size": 123}, ...}}
+        """
+        server_names = body.get("servers", [])
+        file_path = body.get("path", "").strip()
+        if not file_path or not file_path.startswith("/"):
+            return {"error": "path must be an absolute path"}
+        servers = config.filter_servers(server_names)
+        if not servers:
+            return {"error": "no servers matched"}
+
+        import concurrent.futures
+
+        def _dl_one(server):
+            session = pool.get_session(server.name)
+            if not session:
+                return server.name, {"error": "Not connected"}
+            try:
+                # Use base64 to safely transfer binary-compatible content
+                cmd = f"base64 {_shell_quote(file_path)} 2>/dev/null"
+                lines, exit_code = _exhaust_generator(session.exec_command(cmd, timeout=30))
+                if exit_code and exit_code != 0:
+                    # Fall back to cat for error message
+                    lines2, _ = _exhaust_generator(
+                        session.exec_command(f"cat {_shell_quote(file_path)} 2>&1", timeout=10))
+                    return server.name, {"error": "\n".join(lines2) if lines2 else f"exit code {exit_code}"}
+                import base64
+                raw = "".join(lines)
+                raw_bytes = base64.b64decode(raw)
+                try:
+                    content = raw_bytes.decode("utf-8")
+                    return server.name, {"content": content, "size": len(raw_bytes)}
+                except UnicodeDecodeError:
+                    # Binary file — return base64 for frontend to decode
+                    return server.name, {"b64": raw, "size": len(raw_bytes), "binary": True}
+            except Exception as e:
+                return server.name, {"error": str(e)}
+
+        files = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(servers)) as ex:
+            futures = [ex.submit(_dl_one, s) for s in servers]
+            for f in concurrent.futures.as_completed(futures):
+                name, data = f.result()
+                files[name] = data
+
+        return {"files": files}
+
+    @app.post("/api/delete-remote-file")
+    async def delete_remote_file(body: dict):
+        """Delete a file on remote server(s). Body: {"servers": [...], "path": "/abs/path"}"""
+        server_names = body.get("servers", [])
+        file_path = body.get("path", "").strip()
+        if not file_path or not file_path.startswith("/"):
+            return {"error": "path must be an absolute path"}
+        servers = config.filter_servers(server_names)
+        if not servers:
+            return {"error": "no servers matched"}
+
+        results = {}
+        for s in servers:
+            session = pool.get_session(s.name)
+            if not session:
+                results[s.name] = {"error": "Not connected"}
+                continue
+            try:
+                lines, exit_code = _exhaust_generator(
+                    session.exec_command(f"rm -f {_shell_quote(file_path)} 2>&1", timeout=15)
+                )
+                if exit_code and exit_code != 0:
+                    results[s.name] = {"error": "\n".join(lines) if lines else f"exit code {exit_code}"}
+                else:
+                    results[s.name] = {"status": "ok"}
+                    await _broadcast(f"[{s.name}] Deleted: {file_path}")
+            except Exception as e:
+                results[s.name] = {"error": str(e)}
+        return {"results": results}
 
     @app.post("/api/upload")
     async def upload_file_to_servers(
