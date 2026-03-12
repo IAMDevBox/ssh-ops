@@ -2999,7 +2999,14 @@ async function runCompare() {
     col.innerHTML = '<div class="compare-col-header">' + _escAttr(name)
       + '<span class="cmp-exit ' + exitCls + '">' + exitText + '</span></div>'
       + '<div class="compare-col-body"></div>';
-    col.querySelector('.compare-col-body').textContent = data.lines.join('\n');
+    var colBody = col.querySelector('.compare-col-body');
+    var text = data.lines.join('\n');
+    var ansiFrag = ansiToHtml(text);
+    if (ansiFrag) {
+      colBody.appendChild(ansiFrag);
+    } else {
+      colBody.textContent = text;
+    }
     body.appendChild(col);
   });
   document.getElementById('compareOverlay').classList.add('show');
