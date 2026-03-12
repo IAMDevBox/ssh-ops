@@ -22,7 +22,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/toml/toml.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/nginx/nginx.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/theme/material-darker.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -212,7 +211,7 @@
   .section-count { font-size: 11px; color: #aaa; font-weight: normal; margin-left: 4px; }
 
   /* Modal */
-  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); z-index: 1000; justify-content: center; align-items: center; }
+  .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); z-index: 5000; justify-content: center; align-items: center; }
   .modal-overlay.show { display: flex; }
   .modal { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; min-width: 360px; max-width: 800px; width: 50vw; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
   .modal.narrow { width: auto; min-width: 280px; max-width: 400px; }
@@ -2281,7 +2280,7 @@ async function openFileEditor(serverNames, filePath) {
       value: r.content,
       mode: lang || null,
       lineNumbers: true,
-      theme: 'material-darker',
+      theme: 'default',
       indentUnit: 2,
       tabSize: 2,
       indentWithTabs: false,
@@ -2337,7 +2336,10 @@ async function _feSavePane(serverName, skipConfirm) {
   var pane = _fePanes.find(function(p) { return p.server === serverName; });
   if (!pane) return;
   var content = pane.editor.getValue();
-  if (content === pane.original) return;
+  if (content === pane.original) {
+    _showModal('No Changes', 'No modifications on <b>' + _escAttr(serverName) + '</b>.', [{text:'OK', cls:'primary'}]);
+    return;
+  }
   if (!skipConfirm) {
     var ok = await modalConfirm('Confirm Save',
       'Save <code>' + _escAttr(_fePath) + '</code> on <b>' + _escAttr(serverName) + '</b>?');
@@ -2359,7 +2361,10 @@ async function _feSavePane(serverName, skipConfirm) {
 
 async function _feSaveAll() {
   var modified = _fePanes.filter(function(p) { return p.editor.getValue() !== p.original; });
-  if (!modified.length) return;
+  if (!modified.length) {
+    _showModal('No Changes', 'No modifications on any server.', [{text:'OK', cls:'primary'}]);
+    return;
+  }
   var names = modified.map(function(p) { return p.server; });
   var ok = await modalConfirm('Confirm Save All',
     'Save <code>' + _escAttr(_fePath) + '</code> on <b>' + names.length + '</b> server(s)?<br><br>'
