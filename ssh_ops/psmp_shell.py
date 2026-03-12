@@ -4,6 +4,20 @@ Provides a synchronous interface over asyncssh for the PSMP proxy path.
 All commands run through a single persistent shell channel using
 marker-based output capture, because PSMP only supports shell channels
 (not SSH exec or SFTP).
+
+History-clean markers
+---------------------
+Instead of ``echo START; cmd; echo END$?`` (which pollutes bash history
+with marker noise), we use PS0 and PROMPT_COMMAND to emit markers:
+
+- **PS0** is printed by bash *after* a command is read, *before* it
+  executes.  We set it to ``printf`` the start marker.
+- **PROMPT_COMMAND** runs *after* a command finishes, *before* the next
+  prompt.  We set it to ``printf`` the end marker + ``$?`` (exit code).
+
+Because PS0 and PROMPT_COMMAND are *variable assignments* (set once),
+they don't create per-command history entries.  The only history entry
+for each command is the command itself.
 """
 
 import asyncio
@@ -15,6 +29,9 @@ from typing import Generator
 import asyncssh
 
 _ANSI_RE = re.compile(r'(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b\(B)')
+
+# Stable prefix — the per-session suffix is appended at connect time.
+_MARKER_PREFIX = "__SSHOPS_"
 
 
 class PsmpShell:
@@ -32,6 +49,11 @@ class PsmpShell:
         )
         self._thread.start()
         self._cmd_lock = threading.Lock()
+
+        # Session-unique marker tokens (set during _async_connect)
+        self._start_marker: str = ""
+        self._end_marker: str = ""
+        self._end_re: re.Pattern | None = None
 
         # Connect synchronously (blocks until shell is ready)
         future = asyncio.run_coroutine_threadsafe(
@@ -66,6 +88,36 @@ class PsmpShell:
         motd = await self._read_until(r"[$#]\s*$", timeout=15)
         self.motd = _ANSI_RE.sub('', motd).strip()
 
+        # -- Install marker machinery via PS0 + PROMPT_COMMAND -----------
+        # These are variable assignments — they create ONE history entry
+        # (the assignment itself) rather than polluting every command.
+        session_id = uuid.uuid4().hex[:8]
+        self._start_marker = f"{_MARKER_PREFIX}{session_id}__START"
+        self._end_marker = f"{_MARKER_PREFIX}{session_id}__RC_"
+        self._end_re = re.compile(
+            rf"{re.escape(self._end_marker)}(\d+)"
+        )
+
+        # Use printf (not echo) so output is exact, no trailing newline
+        # surprises.  The markers go to stdout which we're reading.
+        # Single line keeps history to one entry for the setup.
+        setup = (
+            f"PS0=$'\\n{self._start_marker}\\n'; "
+            f"PROMPT_COMMAND='printf \"\\n{self._end_marker}%d\\n\" $?'"
+            "\n"
+        )
+        self._process.stdin.write(setup)
+
+        # Drain the setup echo + PROMPT_COMMAND end-marker + prompt.
+        # PROMPT_COMMAND fires for the setup command itself, emitting an
+        # end marker that we need to consume before real commands start.
+        await self._read_until(
+            rf"{re.escape(self._end_marker)}\d+", timeout=10
+        )
+        # Now drain to the next prompt
+        await self._read_until(r"[$#]\s*$", timeout=10)
+
+
     async def _read_until(self, pattern: str, timeout: int = 30) -> str:
         buf = ""
         deadline = asyncio.get_event_loop().time() + timeout
@@ -88,17 +140,19 @@ class PsmpShell:
         return buf
 
     async def _async_run(self, command: str, timeout: int = 120) -> tuple:
-        """Run command via shell, return (lines, exit_code)."""
-        marker = f"__SSHOPS_{uuid.uuid4().hex[:8]}__"
-        start_marker = f"{marker}_START"
-        end_marker = f"{marker}_RC_"
-        # Leading space avoids bash history; start/end markers bracket the output
-        self._process.stdin.write(
-            f" echo {start_marker}\n{command}\necho {end_marker}$?\n"
-        )
+        """Run command via shell, return (lines, exit_code).
+
+        Flow (with PS0 / PROMPT_COMMAND already installed):
+          1. We write ``command\\n`` — this is the *only* history entry.
+          2. Bash prints PS0 (contains start marker) before executing.
+          3. Command runs; its stdout arrives.
+          4. PROMPT_COMMAND fires and prints end marker + $?.
+          5. We capture everything between the two markers.
+        """
+        # Just send the command — markers are injected by PS0/PROMPT_COMMAND
+        self._process.stdin.write(command + "\n")
 
         buf = ""
-        end_re = re.compile(rf"{re.escape(end_marker)}(\d+)")
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
             remaining = max(0.5, deadline - asyncio.get_event_loop().time())
@@ -108,40 +162,42 @@ class PsmpShell:
                     timeout=min(2, remaining),
                 )
             except asyncio.TimeoutError:
-                if end_re.search(buf):
+                if self._end_re.search(buf):
                     break
                 continue
             if not data:
                 break
             buf += data
-            if end_re.search(buf):
+            if self._end_re.search(buf):
                 break
 
         # Parse output — capture lines between start and end markers
-        m = end_re.search(buf)
+        m = self._end_re.search(buf)
         exit_code = int(m.group(1)) if m else -1
 
         lines = buf.split("\n")
         output = []
         capture = False
-        first_after_start = False
         for line in lines:
             stripped = _ANSI_RE.sub('', line).strip()
             content = _ANSI_RE.sub('', line).rstrip('\r')
-            if end_re.search(stripped):
+            if self._end_re.search(stripped):
                 break
             if capture:
-                if marker in stripped:
+                if _MARKER_PREFIX in stripped:
                     continue
-                # Skip command echo line (prompt + command) — PTY echoes input
-                if first_after_start:
-                    first_after_start = False
-                    if re.search(r'[$#]\s', stripped):
-                        continue
                 output.append(content)
-            elif start_marker in stripped:
+            elif self._start_marker in stripped:
                 capture = True
-                first_after_start = True
+                # The start marker line itself is consumed; the next line
+                # may be the PTY echo of the command (prompt + cmd).  We
+                # skip that below.
+
+        # Strip leading PTY command echo (prompt + typed command)
+        if output:
+            first = _ANSI_RE.sub('', output[0]).strip()
+            if re.search(r'[$#]\s', first):
+                output = output[1:]
 
         return output, exit_code
 

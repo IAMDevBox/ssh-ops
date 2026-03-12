@@ -1074,23 +1074,21 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not session:
             return {"error": f"Server '{server_name}' not connected"}
         try:
-            # Check if path is a directory
-            dir_lines, _ = _exhaust_generator(
-                session.exec_command(f"test -d {_shell_quote(file_path)} && echo ISDIR", timeout=10)
+            # Single compound command: check dir, check binary, then cat
+            # Minimizes history entries in PSMP shell mode
+            qp = _shell_quote(file_path)
+            compound = (
+                f"if test -d {qp}; then echo __ISDIR__; "
+                f"elif file -b --mime-encoding {qp} 2>/dev/null | grep -qx binary; then echo __BINARY__; "
+                f"else cat {qp}; fi"
             )
-            if any(line.strip() == "ISDIR" for line in dir_lines):
-                return {"error": "Is a directory — cannot read as text"}
-            # Check if file is binary
-            type_lines, _ = _exhaust_generator(
-                session.exec_command(f"file -b --mime-encoding {_shell_quote(file_path)}", timeout=10)
-            )
-            encoding = (type_lines[0] if type_lines else "").strip().lower()
-            if encoding == "binary":
-                return {"error": "Binary file — cannot read as text"}
-
             lines, exit_code = _exhaust_generator(
-                session.exec_command(f"cat {_shell_quote(file_path)}", timeout=30)
+                session.exec_command(compound, timeout=30)
             )
+            if lines and lines[0].strip() == "__ISDIR__":
+                return {"error": "Is a directory — cannot read as text"}
+            if lines and lines[0].strip() == "__BINARY__":
+                return {"error": "Binary file — cannot read as text"}
             if exit_code and exit_code != 0:
                 err_text = "\n".join(lines) if lines else f"exit code {exit_code}"
                 return {"error": err_text}
@@ -1145,14 +1143,11 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             if not session:
                 return server.name, {"error": "Not connected"}
             try:
-                # Use base64 to safely transfer binary-compatible content
-                cmd = f"base64 {_shell_quote(file_path)} 2>/dev/null"
+                # Use base64 to safely transfer; stderr captured for error msg
+                cmd = f"base64 {_shell_quote(file_path)}"
                 lines, exit_code = _exhaust_generator(session.exec_command(cmd, timeout=30))
                 if exit_code and exit_code != 0:
-                    # Fall back to cat for error message
-                    lines2, _ = _exhaust_generator(
-                        session.exec_command(f"cat {_shell_quote(file_path)} 2>&1", timeout=10))
-                    return server.name, {"error": "\n".join(lines2) if lines2 else f"exit code {exit_code}"}
+                    return server.name, {"error": "\n".join(lines) if lines else f"exit code {exit_code}"}
                 import base64
                 raw = "".join(lines)
                 raw_bytes = base64.b64decode(raw)
