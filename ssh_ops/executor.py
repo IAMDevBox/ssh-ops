@@ -252,6 +252,12 @@ class ConnectionPool:
             self._sessions[server.name] = session
             return session
 
+    @property
+    def sessions(self) -> dict[str, SSHSession]:
+        """Snapshot of all live sessions."""
+        with self._lock:
+            return {k: v for k, v in self._sessions.items() if v.is_alive()}
+
     def get_session(self, server_name: str) -> SSHSession | None:
         with self._lock:
             session = self._sessions.get(server_name)

@@ -1063,9 +1063,21 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
         return {"results": results}
 
+    @app.post("/api/check-sftp")
+    async def check_sftp(body: dict):
+        """Check which servers need SFTP OTP. Body: {"servers": ["name1", ...]}
+        Returns: {"need_otp": ["name1", ...]}"""
+        server_names = body.get("servers", [])
+        need = []
+        for name in server_names:
+            sess = pool.get_session(name)
+            if sess and sess.needs_sftp_otp:
+                need.append(name)
+        return {"need_otp": need}
+
     @app.post("/api/enable-sftp")
     async def enable_sftp(body: dict):
-        """Open dedicated SFTP connection for a PSMP server. Body: {"server": "name", "otp": "..."}"""
+        """Open SFTP for one PSMP server. Body: {"server": "name", "otp": "..."}"""
         server_name = body.get("server", "")
         otp = body.get("otp", "")
         if not otp:
