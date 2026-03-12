@@ -23,9 +23,13 @@ tasks:
 # - command: uptime
 - command: df -h
 - command: echo "hello from ssh-ops"
-- command: sleep 2
+- command: sleep 10
 - command: cat /etc/os-release
 #- command: /opt/app/wrong.sh
 - command: ls -ltr /home/testuser/
 # - command: ls -la /var/data/
 - command: /opt/app/status.sh
+aliases:
+  ll: ls -l
+  nv: nv
+  igcheck: /opt

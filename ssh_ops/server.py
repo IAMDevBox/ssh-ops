@@ -242,6 +242,34 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             for i, t in enumerate(config.tasks)
         ]
 
+    @app.get("/api/aliases")
+    async def list_aliases():
+        return config.aliases
+
+    @app.post("/api/update-aliases")
+    async def update_aliases(body: dict):
+        """Save aliases to config. Body: {"aliases": {"name": "command", ...}}"""
+        aliases = body.get("aliases", {})
+        if not isinstance(aliases, dict):
+            return {"error": "aliases must be a mapping"}
+        # Validate: keys and values must be non-empty strings
+        for name, cmd in aliases.items():
+            if not str(name).strip():
+                return {"error": "alias name cannot be empty"}
+            if not str(cmd).strip():
+                return {"error": f"alias '{name}' has empty command"}
+        try:
+            raw = load_yaml(config.config_path) or {}
+            if aliases:
+                raw["aliases"] = {str(k).strip(): str(v).strip() for k, v in aliases.items()}
+            else:
+                raw.pop("aliases", None)
+            dump_yaml(raw, config.config_path)
+            config.reload()
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": _friendly_error(e)}
+
     @app.get("/api/logs/{server_name}")
     async def get_server_log(server_name: str, date: str = ""):
         """Return today's log for a server. ?date=2026-03-07 for specific date."""
@@ -926,9 +954,10 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
     @app.post("/api/run-command")
     async def run_adhoc_command(body: dict):
-        """Run ad-hoc command. Body: {"servers": [...], "command": "..."}"""
+        """Run ad-hoc command. Body: {"servers": [...], "command": "...", "silent": false}"""
         server_names = body.get("servers", [])
         command = body.get("command", "").strip()
+        silent = body.get("silent", False)
         if not command:
             return {"error": "no command provided"}
         interactive_err = check_interactive_command(command)
@@ -951,25 +980,29 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             for server in servers:
                 session = pool.get_session(server.name)
                 if not session:
-                    logger.error(f"[{server.name}] Not connected")
+                    if not silent:
+                        logger.error(f"[{server.name}] Not connected")
                     failed += 1
                     continue
 
                 log_path = logger.create_exec_log(server.name, "adhoc")
                 ts = datetime.now().strftime("%H:%M:%S")
-                logger.info(f"[{server.name}] $ {command}")
+                if not silent:
+                    logger.info(f"[{server.name}] $ {command}")
                 logger.write_exec_log(log_path, f"\n[{ts}] $ {command}\n")
                 lines, exit_code = _exhaust_generator(session.exec_command(command))
                 exit_code = exit_code or 0
                 for line in lines:
                     ts = datetime.now().strftime("%H:%M:%S")
-                    logger.info(f"[{server.name}] {line}")
+                    if not silent:
+                        logger.info(f"[{server.name}] {line}")
                     logger.write_exec_log(log_path, f"[{ts}] {line}\n")
                 if exit_code != 0:
-                    logger.error(f"[{server.name}] Command failed (exit={exit_code})")
+                    if not silent:
+                        logger.error(f"[{server.name}] Command failed (exit={exit_code})")
                     failed += 1
 
-            if total > 1:
+            if not silent and total > 1:
                 if failed:
                     _broadcast_from_thread(f"✗ Done — {failed}/{total} failed")
                 else:

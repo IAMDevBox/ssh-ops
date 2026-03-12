@@ -370,6 +370,11 @@ class AppConfig:
         ]
         self.tasks = [TaskConfig(t) for t in raw.get("tasks", [])]
 
+        # Command aliases: short name -> full command
+        self.aliases: dict[str, str] = {}
+        for name, cmd in raw.get("aliases", {}).items():
+            self.aliases[str(name)] = str(cmd)
+
         settings = raw.get("settings", {})
         self.log_dir = Path(
             settings.get("log_dir", "./logs")

@@ -130,6 +130,14 @@
   .actions input[type="text"] { flex: 1; min-width: 200px; padding: 6px 10px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; }
   .actions input[type="text"]::placeholder { color: #ccc; }
   .actions input[type="text"].warn { border-color: #d97706; background: #fffbeb; }
+  .alias-hint { font-size: 11px; color: #6b7280; font-family: Consolas, monospace; white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  .cmd-wrap { position: relative; flex: 1; min-width: 200px; display: flex; align-items: center; gap: 4px; }
+  .cmd-wrap input[type="text"] { flex: 1; min-width: 0; }
+  .alias-suggest { display: none; position: absolute; bottom: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc; border-bottom: none; border-radius: 4px 4px 0 0; box-shadow: 0 -4px 8px rgba(0,0,0,.12); z-index: 100; max-height: 180px; overflow-y: auto; }
+  .alias-suggest .alias-item { padding: 4px 10px; font-size: 12px; font-family: Consolas, monospace; cursor: pointer; display: flex; gap: 8px; }
+  .alias-suggest .alias-item:hover, .alias-suggest .alias-item.active { background: #eef2ff; }
+  .alias-suggest .alias-item .a-name { color: #2563eb; font-weight: bold; min-width: 60px; }
+  .alias-suggest .alias-item .a-cmd { color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .actions input[type="text"]:focus { outline: none; border-color: #2563eb; }
   .actions select { padding: 5px 6px; background: #fff; border: 1px solid #bbb; color: #888; border-radius: 3px; font-size: 12px; max-width: 180px; }
   .actions select:focus { outline: none; border-color: #2563eb; }
@@ -292,8 +300,13 @@
     <div class="actions locked" id="actionsPanel">
       <label class="adhoc-toggle unlock-exempt" title="Enable ad-hoc command and file upload. Auto-locks after 60s of inactivity."><input type="checkbox" id="adhocToggle" class="unlock-exempt" onchange="toggleAdhoc(this.checked)">Ad-hoc <span class="countdown" id="adhocCountdown"></span></label>
       <button class="btn unlock-exempt" onclick="openScheduleModal()" title="Schedule periodic command" style="font-size:11px;padding:2px 7px">&#x23F0; Schedule</button>
+      <button class="btn unlock-exempt" onclick="openAliasesModal()" title="Command aliases" style="font-size:11px;padding:2px 7px">Aliases</button>
       <span id="schedIndicator" class="sched-indicator" style="display:none" onclick="openScheduleModal()"><span class="sched-dot"></span><span id="schedLabel"></span><span class="sched-stop" onclick="event.stopPropagation();stopSchedule()" title="Stop">&times;</span></span>
-      <input type="text" id="cmdInput" placeholder="Enter command... (interactive commands like top/vim/less not allowed)" onkeydown="cmdInputKeydown(event)">
+      <div class="cmd-wrap">
+        <input type="text" id="cmdInput" placeholder="Enter command... (interactive commands like top/vim/less not allowed)" onkeydown="cmdInputKeydown(event)" autocomplete="off">
+        <span id="aliasHint" class="alias-hint" style="display:none"></span>
+        <div class="alias-suggest" id="aliasSuggest"></div>
+      </div>
       <select id="cmdHistory" onchange="pickCmdHistory()"><option value="">History</option></select>
       <button class="btn" onclick="deleteCmdHistoryItem()" title="Delete selected history item" style="padding:3px 5px;font-size:10px;color:#bbb" id="cmdHistDelBtn">&#x2715;</button>
       <button class="btn primary" onclick="runCommand()">&#x25b6; Run</button>
@@ -369,10 +382,193 @@ function renderFileList() {
   });
 }
 
+// --- Command aliases ---
+var _aliases = {};
+async function loadAliases() {
+  try {
+    var res = await fetch('/api/aliases');
+    _aliases = await res.json();
+  } catch(e) { _aliases = {}; }
+  _updateAliasHint();
+}
+function resolveAlias(cmd) {
+  if (!cmd) return cmd;
+  // Exact match: "status" -> "systemctl status xxx"
+  if (_aliases[cmd]) return _aliases[cmd];
+  // Prefix match: "status arg1" -> "systemctl status xxx arg1"
+  var space = cmd.indexOf(' ');
+  if (space > 0) {
+    var name = cmd.substring(0, space);
+    var rest = cmd.substring(space);
+    if (_aliases[name]) return _aliases[name] + rest;
+  }
+  return cmd;
+}
+function _updateAliasHint() {
+  var input = document.getElementById('cmdInput');
+  var hint = document.getElementById('aliasHint');
+  if (!hint) return;
+  var cmd = input.value.trim();
+  var resolved = resolveAlias(cmd);
+  if (resolved !== cmd) {
+    hint.textContent = '\u2192 ' + resolved;
+    hint.style.display = '';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+function openAliasesModal() {
+  var entries = Object.entries(_aliases);
+  var rows = '';
+  for (var i = 0; i < entries.length; i++) {
+    rows += _aliasRow(i, entries[i][0], entries[i][1]);
+  }
+  var html = '<div style="display:flex;flex-direction:column;gap:8px">'
+    + '<div style="font-size:11px;color:#888">Define short names for common commands. Aliases expand automatically in the command input.</div>'
+    + '<div id="aliasRows" style="display:flex;flex-direction:column;gap:4px">' + rows + '</div>'
+    + '<button class="btn" onclick="_addAliasRow()" style="align-self:flex-start;font-size:11px;padding:2px 8px">+ Add</button>'
+    + '<div id="aliasError" style="display:none;color:#dc2626;font-size:12px;padding:4px 8px;background:#fef2f2;border-radius:3px"></div>'
+    + '</div>';
+  _showModal('Command Aliases', html, [
+    { text: 'Save', cls: 'btn primary', noAutoClose: true, action: function() { _saveAliases(); } },
+    { text: 'Cancel', cls: 'btn', action: function() {} }
+  ]);
+  _initAliasDrag();
+}
+function _aliasRow(i, name, cmd) {
+  return '<div class="alias-row" draggable="true" style="display:flex;gap:6px;align-items:center">'
+    + '<span class="drag-handle" title="Drag to reorder" style="cursor:grab;color:#bbb;font-size:14px;padding:0 2px;user-select:none">\u2261</span>'
+    + '<input type="text" class="alias-name" value="' + _escAttr(name || '') + '" placeholder="name" style="width:100px;padding:4px 6px;border:1px solid #bbb;border-radius:3px;font-family:Consolas,monospace;font-size:12px">'
+    + '<span style="color:#999">\u2192</span>'
+    + '<input type="text" class="alias-cmd" value="' + _escAttr(cmd || '') + '" placeholder="command" style="flex:1;padding:4px 6px;border:1px solid #bbb;border-radius:3px;font-family:Consolas,monospace;font-size:12px">'
+    + '<button class="btn" onclick="this.parentElement.remove()" style="padding:2px 5px;font-size:10px;color:#bbb" title="Remove">\u2715</button>'
+    + '</div>';
+}
+var _dragRow = null;
+function _initAliasDrag() {
+  var container = document.getElementById('aliasRows');
+  container.addEventListener('dragstart', function(e) {
+    var row = e.target.closest('.alias-row');
+    if (!row) return;
+    _dragRow = row;
+    row.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  container.addEventListener('dragend', function(e) {
+    if (_dragRow) { _dragRow.style.opacity = ''; _dragRow = null; }
+    container.querySelectorAll('.alias-row').forEach(function(r) { r.style.borderTop = ''; });
+  });
+  container.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    var target = e.target.closest('.alias-row');
+    container.querySelectorAll('.alias-row').forEach(function(r) { r.style.borderTop = ''; });
+    if (target && target !== _dragRow) {
+      target.style.borderTop = '2px solid #2563eb';
+    }
+  });
+  container.addEventListener('drop', function(e) {
+    e.preventDefault();
+    var target = e.target.closest('.alias-row');
+    if (target && target !== _dragRow && _dragRow) {
+      container.insertBefore(_dragRow, target);
+    }
+  });
+}
+function _addAliasRow() {
+  var container = document.getElementById('aliasRows');
+  var div = document.createElement('div');
+  div.innerHTML = _aliasRow(0, '', '');
+  container.appendChild(div.firstElementChild);
+  container.lastElementChild.querySelector('.alias-name').focus();
+}
+async function _saveAliases() {
+  var rows = document.querySelectorAll('.alias-row');
+  var aliases = {};
+  var error = '';
+  rows.forEach(function(row) {
+    var name = row.querySelector('.alias-name').value.trim();
+    var cmd = row.querySelector('.alias-cmd').value.trim();
+    if (!name && !cmd) return; // skip empty rows
+    if (!name) { error = 'Alias name cannot be empty'; return; }
+    if (!cmd) { error = 'Alias "' + name + '" has no command'; return; }
+    if (name in aliases) { error = 'Duplicate alias: ' + name; return; }
+    aliases[name] = cmd;
+  });
+  var errEl = document.getElementById('aliasError');
+  if (error) { errEl.textContent = error; errEl.style.display = ''; return; }
+  errEl.style.display = 'none';
+  var result = await api('/api/update-aliases', { aliases: aliases });
+  if (result.error) { errEl.textContent = result.error; errEl.style.display = ''; return; }
+  _aliases = aliases;
+  _updateAliasHint();
+  _closeModal();
+  appendLine('Aliases saved (' + Object.keys(aliases).length + ' entries)');
+}
+
+// --- Alias suggestions ---
+var _suggestIdx = -1;
+function _showAliasSuggest(query) {
+  var box = document.getElementById('aliasSuggest');
+  if (!query || !Object.keys(_aliases).length) { box.style.display = 'none'; _suggestIdx = -1; return; }
+  var matches = [];
+  var q = query.toLowerCase();
+  for (var name in _aliases) {
+    if (name.toLowerCase().indexOf(q) === 0) {
+      matches.push({ name: name, cmd: _aliases[name] });
+    }
+  }
+  if (!matches.length) { box.style.display = 'none'; _suggestIdx = -1; return; }
+  box.innerHTML = matches.map(function(m, i) {
+    return '<div class="alias-item" data-name="' + _escAttr(m.name) + '"><span class="a-name">' + _escAttr(m.name) + '</span><span class="a-cmd">' + _escAttr(m.cmd) + '</span></div>';
+  }).join('');
+  box.style.display = 'block';
+  _suggestIdx = -1;
+  // Click to select
+  box.querySelectorAll('.alias-item').forEach(function(el) {
+    el.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      document.getElementById('cmdInput').value = el.dataset.name;
+      box.style.display = 'none';
+      _updateAliasHint();
+    });
+  });
+}
+function _suggestNav(dir) {
+  var box = document.getElementById('aliasSuggest');
+  var items = box.querySelectorAll('.alias-item');
+  if (!items.length) return false;
+  items.forEach(function(el) { el.classList.remove('active'); });
+  _suggestIdx += dir;
+  if (_suggestIdx < 0) _suggestIdx = items.length - 1;
+  if (_suggestIdx >= items.length) _suggestIdx = 0;
+  items[_suggestIdx].classList.add('active');
+  items[_suggestIdx].scrollIntoView({ block: 'nearest' });
+  return true;
+}
+function _suggestAccept() {
+  var box = document.getElementById('aliasSuggest');
+  var items = box.querySelectorAll('.alias-item');
+  if (_suggestIdx >= 0 && _suggestIdx < items.length) {
+    document.getElementById('cmdInput').value = items[_suggestIdx].dataset.name;
+    box.style.display = 'none';
+    _suggestIdx = -1;
+    _updateAliasHint();
+    return true;
+  }
+  return false;
+}
+
 // --- Command input: warn on modifying commands ---
 document.getElementById('cmdInput').addEventListener('input', function() {
   var cmd = this.value.trim();
-  this.classList.toggle('warn', cmd && isModifyingCmd(cmd));
+  this.classList.toggle('warn', cmd && isModifyingCmd(resolveAlias(cmd)));
+  _updateAliasHint();
+  _showAliasSuggest(cmd);
+});
+document.getElementById('cmdInput').addEventListener('blur', function() {
+  setTimeout(function() { document.getElementById('aliasSuggest').style.display = 'none'; }, 150);
 });
 
 function clearFileList() {
@@ -960,6 +1156,7 @@ async function switchConfig() {
     document.getElementById('panel-main').textContent = '';
     loadServers();
     loadTasks();
+    loadAliases();
     stopSchedule();
     _loadSchedConfig();
     appendLine('Switched to config: ' + name);
@@ -1359,6 +1556,15 @@ function pickCmdHistory() {
 var _histIdx = -1;
 var _histDraft = '';
 function cmdInputKeydown(e) {
+  var suggestOpen = document.getElementById('aliasSuggest').style.display === 'block';
+  if (suggestOpen) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); _suggestNav(1); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); _suggestNav(-1); return; }
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      if (_suggestAccept()) { e.preventDefault(); return; }
+    }
+    if (e.key === 'Escape') { document.getElementById('aliasSuggest').style.display = 'none'; return; }
+  }
   if (e.key === 'Enter') { runCommand(); _histIdx = -1; return; }
   if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
   e.preventDefault();
@@ -1747,6 +1953,7 @@ var _schedTimer = null;
 var _schedCmd = '';
 var _schedInterval = 60;
 var _schedRunning = false;
+var _schedSilent = false;
 
 function _schedKey(key) {
   var cfg = document.getElementById('configSelect').value || 'default';
@@ -1755,6 +1962,7 @@ function _schedKey(key) {
 function _loadSchedConfig() {
   _schedCmd = localStorage.getItem(_schedKey('cmd')) || '';
   _schedInterval = parseInt(localStorage.getItem(_schedKey('interval'))) || 60;
+  _schedSilent = localStorage.getItem(_schedKey('silent')) === '1';
 }
 
 function openScheduleModal() {
@@ -1766,6 +1974,7 @@ function openScheduleModal() {
     + '<input type="text" id="schedCmdInput" value="' + _escAttr(cmd) + '" placeholder="Enter command to run periodically" style="font-family:Consolas,monospace;font-size:13px;padding:6px 10px;border:1px solid #bbb;border-radius:3px">'
     + '<label style="font-size:12px;color:#555">Interval (seconds)</label>'
     + '<input type="number" id="schedIntervalInput" value="' + interval + '" min="10" max="86400" style="width:120px;padding:6px 10px;border:1px solid #bbb;border-radius:3px;font-size:13px">'
+    + '<label style="font-size:12px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="schedSilentCheck"' + (_schedSilent ? ' checked' : '') + '> Silent mode <span style="font-size:11px;color:#999">(no output in panel, still logged to file)</span></label>'
     + '<div style="font-size:11px;color:#888">Min 10s. Command will run on all selected servers.</div>'
     + '<div style="font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:6px">Settings saved per config (<b>' + _escAttr(cfgName) + '</b>)</div>'
     + '</div>';
@@ -1788,13 +1997,15 @@ function startSchedule() {
 
   _schedCmd = cmd;
   _schedInterval = interval;
+  _schedSilent = document.getElementById('schedSilentCheck').checked;
   localStorage.setItem(_schedKey('cmd'), cmd);
   localStorage.setItem(_schedKey('interval'), interval);
+  localStorage.setItem(_schedKey('silent'), _schedSilent ? '1' : '0');
   stopSchedule(true);
 
   _schedRunning = true;
   _updateSchedIndicator();
-  appendLine('[Schedule] Started: "' + cmd + '" every ' + interval + 's');
+  appendLine('[Schedule] Started: "' + cmd + '" every ' + interval + 's' + (_schedSilent ? ' (silent)' : ''));
   _runScheduledCmd();
   _schedTimer = setInterval(_runScheduledCmd, interval * 1000);
   _closeModal();
@@ -1819,11 +2030,12 @@ async function _runScheduledCmd() {
   }
   var names = getSelectedServers();
   if (!names.length) {
-    appendLine('[Schedule] No servers selected, skipping');
+    if (!_schedSilent) appendLine('[Schedule] No servers selected, skipping');
     return;
   }
-  var result = await api('/api/run-command', { servers: names, command: _schedCmd });
-  if (result.error) appendLine('[Schedule] ' + result.error);
+  var cmd = resolveAlias(_schedCmd);
+  var result = await api('/api/run-command', { servers: names, command: cmd, silent: _schedSilent });
+  if (result.error && !_schedSilent) appendLine('[Schedule] ' + result.error);
 }
 
 function _updateSchedIndicator() {
@@ -1831,7 +2043,8 @@ function _updateSchedIndicator() {
   var label = document.getElementById('schedLabel');
   if (_schedRunning) {
     el.style.display = '';
-    label.textContent = _schedInterval + 's: ' + (_schedCmd.length > 30 ? _schedCmd.substring(0, 30) + '...' : _schedCmd);
+    var prefix = _schedSilent ? '\uD83D\uDD07 ' : '';
+    label.textContent = prefix + _schedInterval + 's: ' + (_schedCmd.length > 30 ? _schedCmd.substring(0, 30) + '...' : _schedCmd);
   } else {
     el.style.display = 'none';
   }
@@ -1842,8 +2055,9 @@ function _escAttr(s) { return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').r
 async function runCommand() {
   _touchAdhoc();
   var input = document.getElementById('cmdInput');
-  var cmd = input.value.trim();
-  if (!cmd) { appendLine('[ERROR] Enter a command first'); return; }
+  var raw = input.value.trim();
+  if (!raw) { appendLine('[ERROR] Enter a command first'); return; }
+  var cmd = resolveAlias(raw);
 
   var err = checkInteractiveCmd(cmd);
   if (err) { appendLine('[ERROR] ' + err); return; }
@@ -1851,7 +2065,7 @@ async function runCommand() {
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
 
-  appendLine('$ ' + cmd);
+  appendLine('$ ' + (cmd !== raw ? raw + '  \u2192  ' + cmd : cmd));
   var result = await api('/api/run-command', { servers: names, command: cmd });
   if (result.error) { appendLine('[ERROR] ' + result.error); return; }
   input.value = '';
@@ -2444,6 +2658,7 @@ loadServers();
 loadTasks();
 loadCmdHistory();
 loadUploadHistory();
+loadAliases();
 // Restore T toggle state
 try {
   if (localStorage.getItem('ssh-ops-hide-ts')) {
