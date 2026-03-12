@@ -124,6 +124,7 @@ class PsmpShell:
         lines = buf.split("\n")
         output = []
         capture = False
+        first_after_start = False
         for line in lines:
             stripped = _ANSI_RE.sub('', line).strip()
             content = _ANSI_RE.sub('', line).rstrip('\r')
@@ -132,9 +133,15 @@ class PsmpShell:
             if capture:
                 if marker in stripped:
                     continue
+                # Skip command echo line (prompt + command) — PTY echoes input
+                if first_after_start:
+                    first_after_start = False
+                    if re.search(r'[$#]\s', stripped):
+                        continue
                 output.append(content)
             elif start_marker in stripped:
                 capture = True
+                first_after_start = True
 
         return output, exit_code
 

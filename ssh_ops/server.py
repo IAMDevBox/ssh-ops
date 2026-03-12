@@ -1063,12 +1063,11 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not session:
             return {"error": f"Server '{server_name}' not connected"}
         try:
-            # Check if path is a directory (use unique marker to avoid matching command echo in PSMP)
-            _dir_marker = "__ISDIR_7f3a__"
+            # Check if path is a directory
             dir_lines, _ = _exhaust_generator(
-                session.exec_command(f"test -d {_shell_quote(file_path)} && echo {_dir_marker}", timeout=10)
+                session.exec_command(f"test -d {_shell_quote(file_path)} && echo ISDIR", timeout=10)
             )
-            if any(_dir_marker in line for line in dir_lines):
+            if any(line.strip() == "ISDIR" for line in dir_lines):
                 return {"error": "Is a directory — cannot read as text"}
             # Check if file is binary
             type_lines, _ = _exhaust_generator(
