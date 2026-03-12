@@ -31,7 +31,17 @@ import asyncssh
 
 logger = logging.getLogger(__name__)
 
-_ANSI_RE = re.compile(r'(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b\(B)')
+_ANSI_RE = re.compile(
+    r'\x1b'           # ESC
+    r'(?:'
+    r'\[[0-9;?]*[A-Za-z~]'   # CSI sequences: \x1b[...X (includes \x1b[?2004h etc.)
+    r'|\][^\x07]*\x07'       # OSC sequences: \x1b]...BEL
+    r'|\(B'                   # charset switch
+    r'|[=>]'                  # keypad mode
+    r'|[78DMHc]'              # cursor save/restore, line feed, tab set, reset
+    r')'
+    r'|\x1b'                  # catch any remaining bare ESC
+)
 
 # Stable prefix — the per-session suffix is appended at connect time.
 _MARKER_PREFIX = "__SSHOPS_"

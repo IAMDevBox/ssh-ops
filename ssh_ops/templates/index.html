@@ -950,18 +950,24 @@ async function refreshLogTab(serverName) {
       var rest = line.slice(tsMatch[1].length);
       var ansiFrag = ansiToHtml(rest);
       if (ansiFrag) div.appendChild(ansiFrag);
-      else div.appendChild(document.createTextNode(rest));
+      else div.appendChild(document.createTextNode(stripNonColorAnsi(rest)));
     } else {
       var ansiFrag = ansiToHtml(line);
       if (ansiFrag) div.appendChild(ansiFrag);
-      else div.textContent = line;
+      else div.textContent = stripNonColorAnsi(line);
     }
     panel.appendChild(div);
   }
   if (atBottom) panel.scrollTop = panel.scrollHeight;
 }
 
-// --- ANSI color code parser ---
+// --- ANSI cleanup & color parser ---
+// Strip non-color ANSI sequences (erase, cursor, mode, etc.) but keep SGR color codes (\x1b[...m)
+var _ANSI_NONCOLOR_RE = /\x1b\[[0-9;?]*[A-Za-ln-z~]|\x1b\][^\x07]*\x07|\x1b[\(\)][A-B0-2]|\x1b[=>78DMHc]|\x1b(?!\[)/g;
+function stripNonColorAnsi(text) {
+  return text.replace(_ANSI_NONCOLOR_RE, '');
+}
+
 var _ANSI_COLORS = {
   '30': '#000', '31': '#dc2626', '32': '#16a34a', '33': '#d97706',
   '34': '#2563eb', '35': '#9333ea', '36': '#0891b2', '37': '#888',
@@ -976,6 +982,8 @@ var _ANSI_BG = {
 };
 
 function ansiToHtml(text) {
+  if (text.indexOf('\x1b') === -1) return null;
+  text = stripNonColorAnsi(text);
   if (text.indexOf('\x1b') === -1) return null;
   var parts = text.split(/\x1b\[([0-9;]*)m/);
   if (parts.length <= 1) return null;
@@ -3005,7 +3013,7 @@ async function runCompare() {
     if (ansiFrag) {
       colBody.appendChild(ansiFrag);
     } else {
-      colBody.textContent = text;
+      colBody.textContent = stripNonColorAnsi(text);
     }
     body.appendChild(col);
   });
