@@ -225,11 +225,14 @@ class PsmpShell:
         if not self._conn or not self._process:
             return False
         try:
-            return (
-                self._thread.is_alive()
-                and self._conn._transport is not None
-                and not self._conn._transport.is_closing()
-            )
+            if not self._thread.is_alive():
+                return False
+            transport = self._conn._transport
+            if transport is None or transport.is_closing():
+                return False
+            # Active probe — send SSH ignore packet to detect dead connections
+            transport.send_packet(bytes([96]))  # SSH_MSG_IGNORE
+            return True
         except Exception:
             return False
 

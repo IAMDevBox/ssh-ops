@@ -990,7 +990,18 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 if not silent:
                     logger.info(f"[{server.name}] $ {command}")
                 logger.write_exec_log(log_path, f"\n[{ts}] $ {command}\n")
-                lines, exit_code = _exhaust_generator(session.exec_command(command))
+                try:
+                    lines, exit_code = _exhaust_generator(session.exec_command(command))
+                except Exception as exc:
+                    err_msg = str(exc)
+                    logger.error(f"[{server.name}] '{command}' failed: {err_msg}")
+                    logger.error(f"[{server.name}] Stopping — '{command}' failed")
+                    pool.disconnect(server.name)
+                    loop = _main_loop
+                    if loop and loop.is_running():
+                        asyncio.run_coroutine_threadsafe(_broadcast_server_status(), loop)
+                    failed += 1
+                    continue
                 exit_code = exit_code or 0
                 for line in lines:
                     ts = datetime.now().strftime("%H:%M:%S")
