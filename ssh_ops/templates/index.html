@@ -3660,7 +3660,7 @@ function _extractDirFromCmd(text) {
   return '';
 }
 
-function _fpDblClick(e) {
+async function _fpDblClick(e) {
   e.stopPropagation();
   e.preventDefault();
   clearTimeout(_fpClickTimer);
@@ -3676,22 +3676,11 @@ function _fpDblClick(e) {
   var server = sysPrefixes.indexOf(rawServer) >= 0 ? '' : rawServer;
   var names = server ? [server] : getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
-  // Resolve relative path via pwd if needed
+  // Resolve relative path via cwd sync if needed
   if (!path.startsWith('/')) {
-    api('/api/run-command', { servers: [names[0]], command: 'pwd' }).then(function(r) {
-      if (r && r.results) {
-        var pwd = (r.results[names[0]] || '').trim();
-        if (pwd) {
-          var dir = pwd.endsWith('/') ? pwd : pwd + '/';
-          path = dir + path;
-          _cwdSet(dir);
-        }
-      }
-      var dirPath = path.endsWith('/') ? path : path + '/';
-      _cwdSet(dirPath);
-      api('/api/run-command', { servers: names, command: 'ls -ltr ' + dirPath });
-    });
-    return;
+    if (!_cwd) await _cwdSync();
+    if (_cwd) path = _cwd + path;
+    if (!path.startsWith('/')) { appendLine('[ERROR] Cannot resolve path — use absolute path or run "ls /dir" first'); return; }
   }
   var dirPath = path.endsWith('/') ? path : path + '/';
   _cwdSet(dirPath);
