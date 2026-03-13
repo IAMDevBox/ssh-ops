@@ -2918,18 +2918,26 @@ async function runCommand() {
   // Intercept built-in commands: se /path (edit), dl /path (download)
   var editPath = _isEditCommand(cmd);
   if (editPath) {
-    if (!editPath.startsWith('/') && _cwd) editPath = _cwd + editPath;
     var names = getSelectedServers();
     if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+    if (!editPath.startsWith('/')) {
+      if (!_cwd) await _cwdSync();
+      if (_cwd) editPath = _cwd + editPath;
+    }
+    if (!editPath.startsWith('/')) { appendLine('[ERROR] Cannot resolve relative path — use absolute path or run "ls /dir" first'); return; }
     input.value = '';
     openFileEditor(names, editPath);
     return;
   }
   var dlPath = _isDownloadCommand(cmd);
   if (dlPath) {
-    if (!dlPath.startsWith('/') && _cwd) dlPath = _cwd + dlPath;
     var names = getSelectedServers();
     if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+    if (!dlPath.startsWith('/')) {
+      if (!_cwd) await _cwdSync();
+      if (_cwd) dlPath = _cwd + dlPath;
+    }
+    if (!dlPath.startsWith('/')) { appendLine('[ERROR] Cannot resolve relative path — use absolute path or run "ls /dir" first'); return; }
     input.value = '';
     downloadRemoteFile(names, dlPath);
     return;
