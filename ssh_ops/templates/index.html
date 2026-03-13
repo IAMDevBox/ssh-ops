@@ -3938,22 +3938,15 @@ async function _fpAction(action) {
   var names = _fpCurrentServer ? [_fpCurrentServer] : getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No server context — select servers first'); return; }
 
-  // Resolve relative paths by querying pwd on the server
+  // Resolve relative paths by syncing cwd from server
   if (path && !path.startsWith('/')) {
-    try {
-      var pwdResult = await api('/api/run-command', { servers: [names[0]], command: 'pwd' });
-      if (pwdResult && pwdResult.results) {
-        var pwdLine = (pwdResult.results[names[0]] || '').trim();
-        if (pwdLine) {
-          var dir = pwdLine.endsWith('/') ? pwdLine : pwdLine + '/';
-          path = dir + path;
-          _fpCurrentPath = path;
-          _cwdSet(dir);
-        }
-      }
-    } catch(e) {}
+    if (!_cwd) await _cwdSync();
+    if (_cwd) {
+      path = _cwd + path;
+      _fpCurrentPath = path;
+    }
   }
-  if (!path.startsWith('/')) { appendLine('[ERROR] Cannot resolve path — try setting cwd first (cd /path)'); return; }
+  if (!path.startsWith('/')) { appendLine('[ERROR] Cannot resolve path — use absolute path or run "ls /dir" first'); return; }
 
   if (action === 'copy') {
     appendLine('[copy] Reading ' + path + ' from ' + names[0] + '...');
@@ -4065,7 +4058,7 @@ async function _cwdSync() {
   if (result.error) { appendLine('[ERROR] ' + result.error); return; }
   var data = result.results[names[0]];
   if (data && data.lines && data.lines.length) {
-    var dir = data.lines[0].trim();
+    var dir = stripNonColorAnsi(data.lines[0]).replace(/\x1b\[[0-9;]*m/g, '').trim();
     if (dir.startsWith('/')) {
       _cwdSet(dir);
       appendLine('[cwd] Synced: ' + _cwd);
