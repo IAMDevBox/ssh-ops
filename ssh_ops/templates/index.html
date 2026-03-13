@@ -493,6 +493,11 @@
   <button class="fp-menu-item fp-file-only danger" onclick="_fpAction('delete')"><span class="fp-icon">&#x2716;</span>Delete</button>
 </div>
 
+<div class="fp-menu" id="taskMenu">
+  <button class="fp-menu-item" id="tmCopy"><span class="fp-icon">&#x2398;</span>Copy command</button>
+  <button class="fp-menu-item" id="tmCompare"><span class="fp-icon">&#x2194;</span>Run in compare</button>
+</div>
+
 <script>
 var activeTab = 'main';
 var logTimers = {};
@@ -1544,6 +1549,38 @@ var TASK_ICONS = { command: '$', upload: '\u2191', script: '\u2699' };
 var _cachedTasks = [];
 var _dragFromIdx = null;
 
+function _showTaskMenu(e, task, detail) {
+  var menu = document.getElementById('taskMenu');
+  // Position at cursor
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('show');
+
+  // Copy command
+  document.getElementById('tmCopy').onclick = function() {
+    menu.classList.remove('show');
+    navigator.clipboard.writeText(detail);
+    appendLine('[copy] Task command copied: ' + detail);
+  };
+
+  // Run in compare mode
+  var tmCompare = document.getElementById('tmCompare');
+  // Only show compare for command tasks
+  tmCompare.style.display = task.command ? '' : 'none';
+  tmCompare.onclick = function() {
+    menu.classList.remove('show');
+    var names = getSelectedServers();
+    if (names.length < 2) { appendLine('[ERROR] Compare needs at least 2 servers selected'); return; }
+    document.getElementById('cmdInput').value = task.command;
+    runCompare();
+  };
+}
+
+// Close task menu on outside click
+document.addEventListener('click', function() {
+  document.getElementById('taskMenu').classList.remove('show');
+});
+
 async function loadTasks() {
   var res = await apiGet('/api/tasks');
   if (!res) return;
@@ -1622,6 +1659,15 @@ async function loadTasks() {
     del.textContent = '\u00d7';
     del.title = 'Remove from config';
     del.addEventListener('click', function(e) { e.stopPropagation(); deleteTask(t.index, shortDetail); });
+
+    // Context menu on right-click (command/script tasks only)
+    if (t.type === 'command' || t.type === 'script') {
+      div.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        _showTaskMenu(e, t, fullDetail);
+      });
+    }
 
     actions.appendChild(up);
     actions.appendChild(down);
