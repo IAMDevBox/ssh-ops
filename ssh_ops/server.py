@@ -22,6 +22,7 @@ from ssh_ops.yaml_util import load_yaml, dump_yaml, dump_yaml_str, safe_load_str
 from .config import AppConfig, TaskConfig, check_interactive_command, is_modifying_command
 from .executor import ConnectionPool, TaskExecutor, _exhaust_generator, _shell_quote
 from .logger import ExecLogger
+from .plugins import validate_file, get_plugins
 
 MAX_HISTORY = 5000  # max lines to keep in memory
 
@@ -1074,6 +1075,24 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             if sess and sess.needs_sftp_otp:
                 need.append(name)
         return {"need_otp": need}
+
+    @app.post("/api/validate-file")
+    async def validate_upload_file(body: dict):
+        """Validate a file before upload. Body: {"filename": "...", "content": "..."}
+        Returns: {"result": null} if no plugin matches, or
+        {"result": [{"plugin": "...", "errors": [...], "warnings": [...]}, ...]}
+        """
+        filename = body.get("filename", "")
+        content = body.get("content", "")
+        if not filename:
+            return {"error": "filename is required"}
+        result = validate_file(filename, content)
+        return {"result": result}
+
+    @app.get("/api/plugins")
+    async def list_plugins():
+        """List available validation plugins."""
+        return [{"name": p.name, "description": p.description} for p in get_plugins()]
 
     @app.post("/api/enable-sftp")
     async def enable_sftp(body: dict):

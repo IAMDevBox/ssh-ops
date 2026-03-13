@@ -328,6 +328,7 @@
           <button class="config-menu-item" onclick="renameConfigModal();closeConfigMenu()"><span class="mi">&#x270e;</span>Rename</button>
           <button class="config-menu-item" onclick="editConfigYaml();closeConfigMenu()"><span class="mi">&#x270e;</span>Edit YAML</button>
           <button class="config-menu-item" onclick="downloadConfig();closeConfigMenu()"><span class="mi">&#x2913;</span>Download</button>
+          <button class="config-menu-item" onclick="showPlugins();closeConfigMenu()"><span class="mi">&#x2699;</span>Validation Plugins</button>
           <button class="config-menu-item danger" onclick="deleteConfigModal();closeConfigMenu()"><span class="mi">&#x2716;</span>Delete</button>
         </div>
       </div>
@@ -1463,6 +1464,32 @@ document.addEventListener('click', function() { _closeAllMenus(); });
 
 function downloadConfig() {
   window.open('/api/download-config', '_blank');
+}
+
+async function showPlugins() {
+  try {
+    var res = await fetch('/api/plugins');
+    var plugins = await res.json();
+    if (!plugins.length) {
+      _showModal('Validation Plugins', '<p style="color:#888">No plugins loaded.</p>',
+        [{text: 'Close', action: function(){}}]);
+      return;
+    }
+    var html = '<p style="font-size:12px;color:#888;margin-bottom:10px">' +
+      'These plugins validate files before upload. Validation runs automatically when you upload a matching file.</p>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+      '<tr style="border-bottom:1px solid #e5e7eb"><th style="text-align:left;padding:4px 8px;color:#888">Plugin</th>' +
+      '<th style="text-align:left;padding:4px 8px;color:#888">Description</th></tr>';
+    for (var i = 0; i < plugins.length; i++) {
+      html += '<tr style="border-bottom:1px solid #f0f0f0">' +
+        '<td style="padding:5px 8px;font-weight:600;color:#2563eb;white-space:nowrap">' + plugins[i].name + '</td>' +
+        '<td style="padding:5px 8px;color:#555">' + plugins[i].description + '</td></tr>';
+    }
+    html += '</table>';
+    _showModal('Validation Plugins', html, [{text: 'Close', action: function(){}}]);
+  } catch (e) {
+    appendLine('[ERROR] Could not load plugins: ' + e.message);
+  }
 }
 
 async function reloadConfig() {
@@ -3123,6 +3150,69 @@ async function runCompare() {
   });
 }
 
+function _readFileAsText(file) {
+  return new Promise(function(resolve) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = function() { resolve(null); };
+    reader.readAsText(file);
+  });
+}
+
+function _showValidationModal(filename, results) {
+  // results is an array of {plugin, description, errors, warnings}
+  return new Promise(function(resolve) {
+    var totalErrors = 0, totalWarnings = 0;
+    var html = '<div class="modal" style="width:560px;max-height:80vh;display:flex;flex-direction:column">' +
+      '<div class="modal-title">Validation Results</div>' +
+      '<p style="margin:4px 0 8px;font-size:12px;color:#888">File: <b>' + filename + '</b></p>' +
+      '<div style="overflow-y:auto;flex:1;margin-bottom:8px">';
+    for (var r = 0; r < results.length; r++) {
+      var res = results[r];
+      var errors = res.errors || [];
+      var warnings = res.warnings || [];
+      totalErrors += errors.length;
+      totalWarnings += warnings.length;
+      html += '<div style="margin-bottom:10px;padding:8px;background:#f8f8f8;border-radius:4px;border:1px solid #e5e7eb">' +
+        '<div style="font-size:12px;font-weight:600;color:#555;margin-bottom:4px">' + res.plugin +
+        ' <span style="font-weight:400;color:#999">' + res.description + '</span></div>';
+      if (!errors.length && !warnings.length) {
+        html += '<div style="color:#16a34a;font-size:12px">All checks passed.</div>';
+      }
+      for (var i = 0; i < errors.length; i++) {
+        var e = errors[i];
+        html += '<div style="color:#dc2626;font-size:12px;margin:3px 0">' +
+          '<span style="font-weight:600">ERROR</span>' +
+          (e.field ? ' <code style="color:#888;font-size:11px">' + e.field + '</code>' : '') +
+          ' — ' + e.message + '</div>';
+      }
+      for (var i = 0; i < warnings.length; i++) {
+        var w = warnings[i];
+        html += '<div style="color:#b45309;font-size:12px;margin:3px 0">' +
+          '<span style="font-weight:600">WARN</span>' +
+          (w.field ? ' <code style="color:#888;font-size:11px">' + w.field + '</code>' : '') +
+          ' — ' + w.message + '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    var hasErrors = totalErrors > 0;
+    var btnLabel = hasErrors ? 'Upload Anyway (ignore errors)' : (totalWarnings ? 'Upload Anyway' : 'Upload');
+    var btnClass = hasErrors ? 'btn danger' : 'btn btn-primary';
+    html += '<div style="text-align:right">' +
+      '<button id="valCancel" class="btn" style="margin-right:8px">Cancel</button>' +
+      '<button id="valProceed" class="' + btnClass + '">' + btnLabel + '</button>' +
+      '</div></div>';
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay show';
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    function finish(val) { document.body.removeChild(overlay); resolve(val); }
+    document.getElementById('valCancel').onclick = function() { finish(false); };
+    document.getElementById('valProceed').onclick = function() { finish(true); };
+  });
+}
+
 async function uploadFiles() {
   _touchAdhoc();
   var dest = document.getElementById('destInput').value.trim();
@@ -3138,6 +3228,50 @@ async function uploadFiles() {
   }
   var isDir = dest.endsWith('/');
   var mode = document.getElementById('execCheck').checked ? '0755' : '';
+
+  // Validate files before upload (plugins like PingGateway route validator)
+  for (var i = 0; i < pendingFiles.length; i++) {
+    var file = pendingFiles[i];
+    var content = await _readFileAsText(file);
+    if (content !== null) {
+      try {
+        var vRes = await fetch('/api/validate-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, content: content })
+        });
+        var vData = await vRes.json();
+        if (vData.result) {
+          var results = vData.result;
+          // Output summary to output panel
+          for (var r = 0; r < results.length; r++) {
+            var res = results[r];
+            var ne = (res.errors || []).length, nw = (res.warnings || []).length;
+            var summary = '[' + res.plugin + '] ' + file.name + ' — ';
+            if (!ne && !nw) summary += '\u2713 all checks passed';
+            else {
+              var parts = [];
+              if (ne) parts.push(ne + ' error' + (ne > 1 ? 's' : ''));
+              if (nw) parts.push(nw + ' warning' + (nw > 1 ? 's' : ''));
+              summary += parts.join(', ');
+            }
+            appendLine(summary);
+          }
+          // Show modal if there are any issues
+          var hasIssues = results.some(function(r) { return (r.errors || []).length || (r.warnings || []).length; });
+          if (hasIssues) {
+            var proceed = await _showValidationModal(file.name, results);
+            if (!proceed) {
+              appendLine('[INFO] Upload cancelled after validation for ' + file.name);
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        // validation endpoint unavailable — proceed without validation
+      }
+    }
+  }
 
   for (var i = 0; i < pendingFiles.length; i++) {
     var file = pendingFiles[i];
