@@ -1304,6 +1304,7 @@ async function _promptSftpOtp(serverName, allServers) {
         '<p style="margin:8px 0;font-size:13px">' + desc + '</p>' +
         listHtml +
         '<input id="sftpOtpInput" type="password" placeholder="OTP" style="width:100%;padding:6px;box-sizing:border-box;margin:4px 0 12px">' +
+        '<div id="sftpOtpWarn" style="display:none;color:#dc2626;font-size:12px;margin-bottom:8px"></div>' +
         '<div style="text-align:right">' +
           '<button id="sftpOtpCancel" class="btn" style="margin-right:8px">Cancel</button>' +
           '<button id="sftpOtpOk" class="btn btn-primary">Connect</button>' +
@@ -1311,12 +1312,30 @@ async function _promptSftpOtp(serverName, allServers) {
       '</div>';
     document.body.appendChild(overlay);
     var inp = document.getElementById('sftpOtpInput');
+    var warn = document.getElementById('sftpOtpWarn');
     inp.focus();
     function finish(val) { document.body.removeChild(overlay); resolve(val); }
+    function submit() {
+      var val = inp.value;
+      if (!val) return;
+      var reuse = _checkOtpReuse(val);
+      if (reuse) {
+        var ago = Math.round((Date.now() - reuse.ts) / 1000);
+        var msg = 'This OTP was used ' + ago + 's ago';
+        if (reuse.server) msg += ' for ' + reuse.server;
+        warn.textContent = msg + '. Each connection requires a unique OTP.';
+        warn.style.display = 'block';
+        inp.value = '';
+        inp.focus();
+        return;
+      }
+      _recordOtp(val, serverName || 'SFTP');
+      finish(val);
+    }
     document.getElementById('sftpOtpCancel').onclick = function() { finish(null); };
-    document.getElementById('sftpOtpOk').onclick = function() { finish(inp.value); };
+    document.getElementById('sftpOtpOk').onclick = submit;
     inp.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') finish(inp.value);
+      if (e.key === 'Enter') submit();
       if (e.key === 'Escape') finish(null);
     });
   });
@@ -2157,6 +2176,13 @@ async function runSelectedTasks() {
   }
   if (warnings.length) {
     appendLine('[WARN] Modifying commands: ' + warnings.join(', '));
+  }
+
+  // If any upload/script tasks, ensure SFTP is ready on PSMP servers
+  var hasFileTask = selected.some(function(t) { return t.type === 'upload' || t.type === 'script'; });
+  if (hasFileTask) {
+    var sftpErr = await ensureSftpForServers(servers);
+    if (sftpErr) { appendLine('[ERROR] ' + sftpErr); return; }
   }
 
   appendLine('Running ' + taskNames.length + ' task(s) on ' + servers.join(', ') + '...');
