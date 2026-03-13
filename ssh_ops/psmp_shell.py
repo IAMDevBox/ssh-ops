@@ -417,12 +417,6 @@ class PsmpShell:
             transport = self._conn._transport
             if transport is None or transport.is_closing():
                 return False
-            # Check channel is still open for writing
-            chan = getattr(self._process, '_chan', None)
-            if chan is not None:
-                t = getattr(chan, '_transport', None)
-                if t is None or t.is_closing():
-                    return False
             return self._thread.is_alive()
         except Exception:
             return False
