@@ -286,10 +286,17 @@ class TaskExecutor:
     """Executes tasks on servers."""
 
     def __init__(self, pool: ConnectionPool, logger: ExecLogger,
-                 auto_backup: AutoBackupConfig | None = None):
+                 config=None):
         self.pool = pool
         self.logger = logger
-        self.auto_backup = auto_backup
+        self._config = config
+
+    @property
+    def auto_backup(self):
+        """Always read fresh from config so changes via reload() take effect."""
+        if self._config:
+            return self._config.auto_backup
+        return None
 
     def run_task(self, server: ServerConfig, task: TaskConfig) -> bool:
         """Run a single task on a server. Returns True on success."""

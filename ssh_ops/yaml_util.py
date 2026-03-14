@@ -9,6 +9,7 @@ _yaml_rt = YAML(typ="rt")
 _yaml_rt.default_flow_style = False
 _yaml_rt.allow_unicode = True
 _yaml_rt.preserve_quotes = True
+_yaml_rt.width = 4096  # prevent long strings (e.g. ENC() passwords) from wrapping
 
 # Plain safe loader for validation of user-submitted text
 _yaml_safe = YAML(typ="safe")

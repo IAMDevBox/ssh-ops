@@ -77,7 +77,7 @@ def _build_log_command(path: str, mode: str, num_lines: int,
 
 def create_app(config: AppConfig, logger: ExecLogger, master_password: str | None = None) -> FastAPI:
     pool = ConnectionPool(config.keep_alive)
-    executor = TaskExecutor(pool, logger, auto_backup=config.auto_backup)
+    executor = TaskExecutor(pool, logger, config=config)
     ws_clients: set[WebSocket] = set()
     output_history: deque[str] = deque(maxlen=MAX_HISTORY)
     cmd_history: deque[str] = deque(maxlen=MAX_CMD_HISTORY)
