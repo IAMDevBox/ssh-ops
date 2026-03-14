@@ -62,7 +62,7 @@ class ShellScriptValidator(FileValidator):
                 has_set_e = True
                 break
         if not has_set_e:
-            issues.append(Issue("warning",
+            issues.append(Issue("info",
                 "No 'set -e' found — script will continue after errors. "
                 "Consider 'set -euo pipefail' for safety.",
                 "errexit"))
@@ -100,7 +100,7 @@ class ShellScriptValidator(FileValidator):
                 continue
             # cd without || exit
             if re.match(r'^cd\s+\S+\s*$', stripped) and "||" not in stripped:
-                issues.append(Issue("warning",
+                issues.append(Issue("info",
                     f"Line {lineno}: 'cd' without error handling — "
                     f"use 'cd dir || exit 1' to fail safely",
                     f"line:{lineno}"))

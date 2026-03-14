@@ -4,32 +4,32 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SSH Ops Tool</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/matchesonscrollbar.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/search.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/searchcursor.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/jump-to-line.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/matchesonscrollbar.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/scroll/annotatescrollbar.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/properties/properties.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/toml/toml.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/nginx/nginx.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.css" integrity="sha384-zaeBlB/vwYsDRSlFajnDd7OydJ0cWk+c2OWybl3eSUf6hW2EbhlCsQPqKr3gkznT" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.css" integrity="sha384-MomRjC6IKuGHk2XIFKXAwFx0gytd6+ZsF9pnFM3JWZV5izBqPgoLapxRqG1h5IKm" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/matchesonscrollbar.min.css" integrity="sha384-0McSUHfp0PIZuLtdul48AeQQFWpworogNpF2U7psfT2dCYMlx68YevS34v8VBhT3" crossorigin="anonymous">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/codemirror.min.js" integrity="sha384-BEgQlz0fN4eG0n4jipmUe+nOg65hPY7L0E/lPVRaOPdzAfLPGEbXnpAodHtSnlwM" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/dialog/dialog.min.js" integrity="sha384-3COleknUtlGKoEOR9Wm7WKVRyS6ljwYU2x1ebD8nd6ujaLMqwY+q3F8+yDcefbXr" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/search.min.js" integrity="sha384-v64L7YTJ/ullw5v36qIJcvWAxuEnRGu9E326vUV3Ro7sx4HCZHIDTphKO53htazT" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/searchcursor.min.js" integrity="sha384-ILkploZWukdp1VMmzMnE+32H0mgy2e+w29evc4grALGOqIRGBgbBGrwkX7a6zK7y" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/jump-to-line.min.js" integrity="sha384-Hs0iLvujdeUuFY+vs6PlDtVV6VUJpKfJUAnjL6C84Xq4qjsVuCPKbm6ISywgDzP0" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/search/matchesonscrollbar.min.js" integrity="sha384-UjPrjHeof0mGHyX5hz3vQl9wzR0vn9ojpwOu/Um7cm8XojEnju1v9oYDdFNpheDp" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/addon/scroll/annotatescrollbar.min.js" integrity="sha384-eaXNFSDpKhTJ897pBL05KMdvRY8wPLHSMA13Y6y2+EO5t2u1mWRdFbibimrQpo/S" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/yaml/yaml.min.js" integrity="sha384-9q49Jm3hZMwxEMLImsxPxLiaptHpFz1PVa26Dg6SVIO+rj5kx0cgOM2+4ikKJFH9" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/javascript/javascript.min.js" integrity="sha384-g0o+WW9mdIxA7LaaCKTkRm0M5TVT+Bb4s9eocxPsI2G0Xm0POG9iD6G6qP1IIsfS" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/xml/xml.min.js" integrity="sha384-xPpkMo5nDgD98fIcuRVYhxkZV6/9Y4L8s3p0J5c4MxgJkyKJ8BJr+xfRkq7kn6Tw" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/shell/shell.min.js" integrity="sha384-dmPRq54XNtYnlnAo7QrwJnZNa5r0JP5gU8z4H0686Cgz37qrR2jmNaDHUXyMI4wn" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/properties/properties.min.js" integrity="sha384-d5RwbpFd0jLHYLXBilnxqZYSBTRHa3M0teAjG0DfTgxJRjFO+AB+cyzp98CUUbpn" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/toml/toml.min.js" integrity="sha384-yXH8c7mgHjmoKOVYE4TZW9tpuoQYhYuFzKz7yOwfKaVdnQQKMKKCqd5NH0upv0VQ" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/python/python.min.js" integrity="sha384-Xy+2exU6lBoT4OpUOtnQb+cUpn+nlJQEHvRobWVtwz6wIsw4oNoO7xyd/l8rYgMy" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.18/mode/nginx/nginx.min.js" integrity="sha384-AxmshZ2LTwEualbmmv/fBvEhRFAC2wf7RytjpARUB796/N/TzBgMcg6hytgA/9XM" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Consolas, monospace; background: #f5f5f5; color: #333; height: 100vh; display: flex; flex-direction: column; }
   header { background: #fff; padding: 10px 20px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   header h1 { font-size: 16px; color: #2563eb; white-space: nowrap; cursor: pointer; }
   .header-tips { font-size: 11px; color: #888; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 16px; }
-  .header-tips kbd { background: #e8e8e8; border: 1px solid #ccc; border-radius: 3px; padding: 0 4px; font-family: Consolas, monospace; font-size: 10px; color: #555; }
+  .header-tips kbd { background: #e8e8e8; border: 1px solid #ccc; border-radius: 3px; padding: 1px 5px; font-family: Consolas, monospace; font-size: 10px; color: #555; }
   .header-tips { transition: opacity 0.3s; }
   .header-right { display: flex; align-items: center; gap: 10px; }
   .config-bar { display: flex; align-items: center; gap: 6px; }
@@ -135,9 +135,9 @@
   .tab-panel .output-block.out-warn { background: #fef8f8; border-left-color: #fca5a5; }
 
   /* Warn styling: log tabs */
-  .tab.tab-warn { color: #dc2626 !important; }
-  .tab.tab-warn::before { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: #dc2626; }
-  .tab.tab-warn.active { border-bottom-color: #dc2626 !important; }
+  .tab.tab-warn { color: var(--tab-warn-color, #dc2626) !important; }
+  .tab.tab-warn::before { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: var(--tab-warn-color, #dc2626); }
+  .tab.tab-warn.active { border-bottom-color: var(--tab-warn-color, #dc2626) !important; }
   .log-panel.log-warn { background: #fef8f8; border-top: 2px solid #dc2626; }
 
   /* Warn styling: file editor panes */
@@ -179,8 +179,11 @@
   .cwd-bar .cwd-sep { color: #bbb; margin: 0 1px; }
   .cwd-bar .cwd-home { cursor: pointer; padding: 1px 4px; border-radius: 2px; color: #888; font-size: 11px; }
   .cwd-bar .cwd-home:hover { background: #e8e8e8; color: #333; }
-  .cwd-bar .cwd-sync { cursor: pointer; padding: 1px 4px; border-radius: 2px; color: #888; font-size: 11px; margin-left: auto; }
-  .cwd-bar .cwd-sync:hover { background: #e8e8e8; color: #333; }
+  .cwd-bar .cwd-backup { cursor: pointer; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .cwd-bar .cwd-backup.ok { color: #16a34a; background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .cwd-bar .cwd-backup.warn { color: #d97706; background: #fffbeb; border: 1px solid #fde68a; }
+  .cwd-bar .cwd-backup.off { color: #888; background: #f5f5f5; border: 1px solid #e5e5e5; }
+  .cwd-bar .cwd-backup:hover { filter: brightness(0.92); }
   .actions { background: #fff; border-top: 1px solid #ddd; padding: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .actions.locked input[type="text"], .actions.locked select, .actions.locked .btn:not(.unlock-exempt) { opacity: 0.4; pointer-events: none; }
   .actions.locked input[type="file"] { pointer-events: none; }
@@ -243,7 +246,7 @@
   .modal.narrow { width: auto; min-width: 280px; max-width: 400px; }
   .modal.wide { max-width: 95vw; width: 85vw; height: 70vh; padding: 12px 16px; display: flex; flex-direction: column; }
   .modal.wide .modal-title { margin-bottom: 6px; }
-  .modal.wide .modal-body { flex: 1; overflow: hidden; margin-bottom: 8px; display: flex; flex-direction: column; }
+  .modal.wide .modal-body { flex: 1; overflow-y: auto; margin-bottom: 8px; display: flex; flex-direction: column; }
   .modal.wide .modal-actions { margin-top: 0; }
   .modal-body pre { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px; font-family: Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.6; overflow: auto; max-height: 75vh; white-space: pre; tab-size: 2; }
   .modal-title { font-size: 14px; color: #2563eb; margin-bottom: 12px; }
@@ -458,7 +461,7 @@
       <span class="cwd-label">cwd</span>
       <span id="cwdBreadcrumb"></span>
       <span class="cwd-home" onclick="_cwdGoHome()" title="Go to home directory">&#x2302;</span>
-      <span class="cwd-sync" onclick="_cwdSync()" title="Sync from server (pwd)">&#x21bb; sync</span>
+      <span class="cwd-backup off" id="cwdBackupStatus" onclick="_backupMenu(event)" title="Click for options"></span>
     </div>
     <div class="actions locked" id="actionsPanel">
       <label class="adhoc-toggle unlock-exempt" title="Enable ad-hoc command and file upload. Auto-locks after 60s of inactivity."><input type="checkbox" id="adhocToggle" class="unlock-exempt" onchange="toggleAdhoc(this.checked)">Ad-hoc <span class="countdown" id="adhocCountdown"></span></label>
@@ -472,8 +475,6 @@
       </div>
       <select id="cmdHistory" onchange="pickCmdHistory()"><option value="">History</option></select>
       <button class="btn" onclick="deleteCmdHistoryItem()" title="Delete selected history item" style="padding:3px 5px;font-size:10px;color:#bbb" id="cmdHistDelBtn">&#x2715;</button>
-      <select id="cmdFavorites" onchange="pickFavorite()" style="max-width:140px"><option value="">&#x2605; Favorites</option></select>
-      <button class="btn" onclick="toggleFavorite()" title="Pin/unpin current command as favorite" style="padding:3px 6px;font-size:12px;color:#f59e0b" id="favToggleBtn">&#x2606;</button>
       <button class="btn primary" onclick="runCommand()">&#x25b6; Run</button>
       <button class="btn" onclick="runCompare()" title="Run and compare output across servers">&#x2194; Compare</button>
       <button class="btn" onclick="addCmdToTasks()">+ Task</button>
@@ -794,7 +795,6 @@ document.getElementById('cmdInput').addEventListener('input', function() {
   this.classList.toggle('warn', cmd && isModifyingCmd(resolveAlias(cmd)));
   _updateAliasHint();
   _showAliasSuggest(cmd);
-  _updateFavIcon();
 });
 document.getElementById('cmdInput').addEventListener('blur', function() {
   setTimeout(function() { document.getElementById('aliasSuggest').style.display = 'none'; }, 150);
@@ -850,6 +850,7 @@ function _closeModal() {
   inp.style.fontFamily = '';
   inp.style.fontSize = '';
   inp.style.textAlign = '';
+  inp.type = 'text';
   inp.removeAttribute('autocomplete');
 }
 
@@ -889,6 +890,9 @@ function modalPrompt(title, bodyHtml, defaultVal, hint, opts) {
       { text: 'OK', cls: 'primary', action: function() { _modalResolve = null; resolve(_getModalValue(_opts)); } }
     ], { value: defaultVal || '', hint: hint || '', narrow: _opts.narrow });
     var inp = document.getElementById('modalInput');
+    if (_opts.password) {
+      inp.type = 'password';
+    }
     if (_opts.otp) {
       inp.setAttribute('autocomplete', 'one-time-code');
       inp.style.letterSpacing = '2px';
@@ -934,7 +938,7 @@ function openLogTab(serverName) {
   tab.style.position = 'relative';
   tab.dataset.tab = tabId;
   var warn = _getServerWarn(serverName);
-  if (warn) tab.classList.add('tab-warn');
+  if (warn) { tab.classList.add('tab-warn'); tab.style.setProperty('--tab-warn-color', warn.color); }
   var label = document.createTextNode(serverName);
   tab.appendChild(label);
   tab.addEventListener('click', function() { switchTab(tabId); });
@@ -1200,11 +1204,14 @@ function appendLine(text) {
   // Track directory context from command headers for ls filename linkification
   if (cls === 'cmd-input') {
     _currentOutputWarn = _isWarnServer(text);
-    var dir = _extractDirFromCmd(text);
-    if (dir) _fpLastDir = dir;
-    else _fpLastDir = _cwd || '';
-    // Track if this is a listing command (ls/ll/find) even without path
+    // Track if this is a listing command (ls/ll/find)
     _fpIsListCmd = /(?:\$\s+)?(?:ls|ll|find|dir)\b/.test(text);
+    if (_fpIsListCmd) {
+      var dir = _extractDirFromCmd(text);
+      _fpLastDir = dir || _cwd || '';
+    } else {
+      _fpLastDir = '';
+    }
   }
 
   // Non-output line → close current output block
@@ -1535,6 +1542,14 @@ async function switchConfig() {
   var ok = await modalConfirm('Switch Config', 'Switch to <code>' + name + '</code>?\n\nAll connections will be disconnected.');
   if (!ok) { loadConfigs(); return; }
   var result = await api('/api/switch-config', { path: path });
+  if (result.needs_password) {
+    for (var _retry = 0; _retry < 3; _retry++) {
+      var mp = prompt((_retry > 0 ? 'Wrong password. ' : '') + result.message + '\n\nPlease enter master password:');
+      if (!mp) { loadConfigs(); return; }
+      result = await api('/api/switch-config', { path: path, master_password: mp });
+      if (!result.error || result.error !== 'invalid_password') break;
+    }
+  }
   if (result.error) {
     appendLine('[ERROR] Switch config failed: ' + result.error);
     loadConfigs();
@@ -1544,7 +1559,6 @@ async function switchConfig() {
     loadServers();
     loadTasks();
     loadAliases();
-    _renderFavorites();
     stopSchedule();
     _loadSchedConfig();
     appendLine('Switched to config: ' + name);
@@ -1620,6 +1634,41 @@ async function loadSafetySettings() {
   try {
     var res = await apiGet('/api/safety-settings');
     if (res) _safetySettings = await res.json();
+  } catch(e) {}
+  _updateBackupStatus();
+}
+
+async function _updateBackupStatus() {
+  var el = document.getElementById('cwdBackupStatus');
+  if (!el) return;
+  if (!_safetySettings.auto_backup || !_safetySettings.auto_backup.enabled) {
+    el.className = 'cwd-backup off';
+    el.textContent = '\u{1F6E1} Backup OFF';
+    el.title = 'Auto-backup is disabled';
+    return;
+  }
+  var dir = _safetySettings.auto_backup.backup_dir || '/opt/backup';
+  el.className = 'cwd-backup ok';
+  el.textContent = '\u{1F6E1} Backup ON';
+  el.title = 'Checking backup directory...';
+  // Check feasibility on connected servers
+  try {
+    var res = await api('/api/check-backup', {});
+    if (!res || !res.enabled) return;
+    var r = res.results || {};
+    var servers = Object.keys(r);
+    if (!servers.length) { el.title = 'Backup: ' + dir + ' (no servers connected)'; return; }
+    var bad = servers.filter(function(s) { return r[s] !== 'OK' && r[s] !== 'CREATED'; });
+    if (bad.length === 0) {
+      el.className = 'cwd-backup ok';
+      el.textContent = '\u{1F6E1} Backup ON';
+      el.title = 'Backup: ' + dir + ' \u2714 ready on all servers';
+    } else {
+      var issues = bad.map(function(s) { return s + ': ' + (r[s] === 'NO_WRITE' ? 'no write permission' : r[s] === 'NO_PERM' ? 'cannot create' : r[s]); });
+      el.className = 'cwd-backup warn';
+      el.textContent = '\u{1F6E1} Backup \u26A0';
+      el.title = 'Backup issues:\n' + issues.join('\n');
+    }
   } catch(e) {}
 }
 
@@ -2015,7 +2064,8 @@ async function loadCmdHistory() {
 async function deleteCmdHistoryItem() {
   var select = document.getElementById('cmdHistory');
   var val = select.value;
-  if (!val || val === '__clear_all__') {
+  if (!val) return;
+  if (val === '__clear_all__') {
     await api('/api/delete-cmd-history', { all: true });
   } else {
     await api('/api/delete-cmd-history', { command: val });
@@ -2169,21 +2219,56 @@ async function connectSelected() {
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
 
-  // Split selected servers into PSMP (needs OTP, not yet connected) and direct
+  // Split selected servers into categories
   var res = await fetch('/api/servers');
   var allServers = await res.json();
   var psmpNames = [];
   var directNames = [];
+  var noCredNames = [];
   names.forEach(function(name) {
     var s = allServers.find(function(sv) { return sv.name === name; });
-    if (s && s.needs_otp && !s.connected) psmpNames.push(name);
+    if (!s) return;
+    if (s.connected) return; // already connected, skip
+    if (s.needs_otp) psmpNames.push(name);
+    else if (!s.has_credentials) noCredNames.push(name);
     else directNames.push(name);
   });
 
-  // Connect direct servers in parallel (no OTP needed)
+  // Connect direct servers with credentials in parallel
   if (directNames.length) {
     appendLine('Connecting to ' + directNames.join(', ') + '...');
     await api('/api/connect', { servers: directNames });
+  }
+
+  // Prompt password for servers without credentials, one by one
+  var pwAborted = false;
+  for (var pi = 0; pi < noCredNames.length && !pwAborted; pi++) {
+    var pwLabel = noCredNames.length > 1
+      ? 'Enter password for <b>' + noCredNames[pi] + '</b> (' + (pi + 1) + '/' + noCredNames.length + '):'
+      : 'Enter password for <b>' + noCredNames[pi] + '</b>:';
+    var pwConnected = false;
+    while (!pwConnected) {
+      var pw = await modalPrompt('Server Authentication', pwLabel, '', 'Password', { narrow: true, password: true });
+      if (!pw) {
+        if (pi < noCredNames.length - 1) {
+          var pwSkip = await modalConfirm('Skip Server',
+            'Skip <b>' + noCredNames[pi] + '</b> and continue to next server?<br><br>'
+            + 'Choose <b>OK</b> to skip this one, or <b>Cancel</b> to stop all.');
+          if (!pwSkip) pwAborted = true;
+        }
+        break;
+      }
+      appendLine('Connecting to ' + noCredNames[pi] + '...');
+      var pwResult = await api('/api/connect', { servers: [noCredNames[pi]], password: pw });
+      var pwStatus = pwResult && pwResult[noCredNames[pi]];
+      if (pwStatus && pwStatus.indexOf('error') === 0) {
+        var pwRetry = await modalConfirm('Connection Failed',
+          '<b>' + noCredNames[pi] + '</b>: ' + pwStatus + '<br><br>Retry with a different password?');
+        if (pwRetry) continue;
+        break;
+      }
+      pwConnected = true;
+    }
   }
 
   // Connect PSMP servers one by one, each with its own OTP
@@ -2229,7 +2314,7 @@ async function connectSelected() {
     }
   }
 
-  setTimeout(loadServers, 1000);
+  setTimeout(function() { loadServers(); _updateBackupStatus(); }, 1000);
 }
 
 async function disconnectSelected() {
@@ -2454,65 +2539,6 @@ function _touchAdhoc() {
   if (document.getElementById('adhocToggle').checked) {
     _resetAdhocTimer();
   }
-}
-
-// --- Favorites ---
-function _favKey() {
-  var cfg = document.getElementById('configSelect').value || 'default';
-  return 'favorites:' + cfg;
-}
-function _getFavorites() {
-  try { return JSON.parse(localStorage.getItem(_favKey())) || []; } catch(e) { return []; }
-}
-function _saveFavorites(favs) {
-  localStorage.setItem(_favKey(), JSON.stringify(favs));
-  _renderFavorites();
-}
-function _renderFavorites() {
-  var favs = _getFavorites();
-  var select = document.getElementById('cmdFavorites');
-  select.innerHTML = '';
-  var ph = document.createElement('option');
-  ph.value = '';
-  ph.textContent = '\u2605 Favorites (' + favs.length + ')';
-  select.appendChild(ph);
-  favs.forEach(function(cmd) {
-    var opt = document.createElement('option');
-    opt.value = cmd;
-    opt.textContent = cmd.length > 35 ? cmd.substring(0, 35) + '...' : cmd;
-    opt.title = cmd;
-    select.appendChild(opt);
-  });
-  _updateFavIcon();
-}
-function pickFavorite() {
-  var select = document.getElementById('cmdFavorites');
-  var val = select.value;
-  if (val) {
-    document.getElementById('cmdInput').value = val;
-    _updateAliasHint();
-    _updateFavIcon();
-  }
-  select.selectedIndex = 0;
-}
-function toggleFavorite() {
-  var cmd = document.getElementById('cmdInput').value.trim();
-  if (!cmd) return;
-  var favs = _getFavorites();
-  var idx = favs.indexOf(cmd);
-  if (idx >= 0) {
-    favs.splice(idx, 1);
-  } else {
-    favs.push(cmd);
-  }
-  _saveFavorites(favs);
-}
-function _updateFavIcon() {
-  var cmd = document.getElementById('cmdInput').value.trim();
-  var favs = _getFavorites();
-  var btn = document.getElementById('favToggleBtn');
-  btn.innerHTML = favs.indexOf(cmd) >= 0 ? '\u2605' : '\u2606';
-  btn.title = favs.indexOf(cmd) >= 0 ? 'Remove from favorites' : 'Add to favorites';
 }
 
 // --- Remote File Editor (multi-pane) ---
@@ -3221,17 +3247,22 @@ async function runCommand() {
   var serverCmd = _cwdPrependCmd(cmd);
 
   if (isModifyingCmd(cmd)) {
-    // Build prod server warning banner if any selected servers are flagged
+    // Build warning banners grouped by label
     var warnBanner = '';
-    var warnNames = [];
+    var warnGroups = {};
     for (var wi = 0; wi < _serverData.length; wi++) {
-      if (_serverData[wi].warn && names.indexOf(_serverData[wi].name) !== -1) {
-        warnNames.push(_serverData[wi].name);
+      var _sw = _serverData[wi];
+      if (_sw.warn && names.indexOf(_sw.name) !== -1) {
+        var lbl = _sw.warn.label || 'WARN';
+        var clr = _sw.warn.color || '#dc2626';
+        if (!warnGroups[lbl]) warnGroups[lbl] = { color: clr, names: [] };
+        warnGroups[lbl].names.push(_sw.name);
       }
     }
-    if (warnNames.length) {
-      warnBanner = '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:4px;padding:6px 10px;margin-bottom:8px;color:#b91c1c;font-weight:bold;font-size:12px">'
-        + '\u26a0 PRODUCTION servers: ' + _escAttr(warnNames.join(', ')) + '</div>';
+    for (var wl in warnGroups) {
+      var wg = warnGroups[wl];
+      warnBanner += '<div style="background:' + wg.color + '18;border:1px solid ' + wg.color + ';border-radius:4px;padding:6px 10px;margin-bottom:8px;color:' + wg.color + ';font-weight:bold;font-size:12px">'
+        + '\u26a0 ' + _escAttr(wl) + ' servers: ' + _escAttr(wg.names.join(', ')) + '</div>';
     }
     // Auto-backup info — detect glob wildcards that prevent backup
     var backupNote = '';
@@ -4365,12 +4396,14 @@ var _fpIsListCmd = false;  // whether last command was ls/ll/find
 
 function _isLikelyFilePath(p) {
   var parts = p.split('/').filter(Boolean);
-  if (parts.length < 1) return false;
-  if (/^(etc|var|tmp|opt|usr|home|root|srv|proc|sys|dev|run|mnt|media|boot)$/.test(parts[0])) return true;
   if (parts.length < 2) return false;
-  var last = parts[parts.length - 1];
-  if (last.indexOf('.') > 0) return true;
-  return false;
+  // First segment must be a known root directory
+  if (!/^(etc|var|tmp|opt|usr|home|root|srv|proc|sys|dev|run|mnt|media|boot|lib|lib64|sbin|bin)$/.test(parts[0])) return false;
+  // Reject if any segment contains characters unlikely in file paths
+  for (var i = 0; i < parts.length; i++) {
+    if (/[=:"'@#$%^&*!?<>{}()\[\]|,;]/.test(parts[i])) return false;
+  }
+  return true;
 }
 function _looksLikeDir(path) {
   if (path.endsWith('/')) return true;
@@ -4521,9 +4554,9 @@ function _appendWithPaths(parent, text) {
       }
     }
     // 3. Try plain ls output (just a filename, no -l details)
-    // Reject lines with spaces or colons (error messages, not filenames)
+    // Reject lines with special chars (error messages, key=value pairs, not filenames)
     var plainName = text.trim();
-    if (plainName && !/[\s:]/.test(plainName) && !/^total$/.test(plainName)) {
+    if (plainName && !/[\s:="'(){}\[\]|;,@#$%^&*!?<>]/.test(plainName) && !/^total$/.test(plainName)) {
       var fullPath = _fpLastDir ? _fpLastDir + plainName : plainName;
       var isDir = _looksLikeDir(plainName);
       parent.appendChild(_makeFpSpan(plainName, fullPath, isDir));
@@ -4578,14 +4611,14 @@ function _linkifyPaths(container) {
   // If no absolute paths found, try plain ls filename detection
   if (!textNodes.length && (_fpLastDir || _fpIsListCmd)) {
     var plainText = stripped.trim();
-    if (plainText && !/[\s:]/.test(plainText) && !/^total$/.test(plainText)) {
+    if (plainText && !/[\s:="'(){}\[\]|;,@#$%^&*!?<>]/.test(plainText) && !/^total$/.test(plainText)) {
       // Find the text node with this content (skip ts/prefix nodes)
       var walker2 = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
       while (walker2.nextNode()) {
         var nd = walker2.currentNode;
         if (nd.parentNode.classList && (nd.parentNode.classList.contains('ts') || nd.parentNode.classList.contains('server-prefix'))) continue;
         var fname = nd.textContent.trim();
-        if (fname && !/[\s:]/.test(fname) && !/^total$/.test(fname)) {
+        if (fname && !/[\s:="'(){}\[\]|;,@#$%^&*!?<>]/.test(fname) && !/^total$/.test(fname)) {
           var fullPath = _fpLastDir ? _fpLastDir + fname : fname;
           var isDir = _looksLikeDir(fname);
           var span = _makeFpSpan(fname, fullPath, isDir);
@@ -4800,6 +4833,45 @@ function _cwdSet(path) {
   _cwdRender();
 }
 
+function _backupMenu(e) {
+  e.stopPropagation();
+  var el = document.getElementById('cwdBackupStatus');
+  var rect = el.getBoundingClientRect();
+  // Remove existing menu
+  var old = document.getElementById('backupMenu');
+  if (old) { old.remove(); return; }
+  var menu = document.createElement('div');
+  menu.id = 'backupMenu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #ccc;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:4px 0;font-size:12px;min-width:160px;';
+  menu.style.left = (rect.right - 170) + 'px';
+  menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+  var items = [
+    { icon: '\u2699', label: 'Safety Settings', action: function() { showSafetySettings(); } }
+  ];
+  if (_safetySettings.auto_backup && _safetySettings.auto_backup.enabled) {
+    items.push({ icon: '\u2192', label: 'Browse backup dir', action: function() { _cwdGoBackup(); } });
+  }
+  items.forEach(function(item) {
+    var div = document.createElement('div');
+    div.innerHTML = '<span style="display:inline-block;width:16px;text-align:center;margin-right:4px">' + item.icon + '</span>' + _escAttr(item.label);
+    div.style.cssText = 'padding:5px 12px;cursor:pointer;white-space:nowrap;';
+    div.onmouseenter = function() { div.style.background = '#f0f4ff'; };
+    div.onmouseleave = function() { div.style.background = ''; };
+    div.onclick = function(ev) { ev.stopPropagation(); menu.remove(); item.action(); };
+    menu.appendChild(div);
+  });
+  document.body.appendChild(menu);
+  setTimeout(function() {
+    document.addEventListener('click', function _close() { menu.remove(); document.removeEventListener('click', _close); }, { once: true });
+  }, 0);
+}
+
+function _cwdGoBackup() {
+  if (!_safetySettings.auto_backup || !_safetySettings.auto_backup.enabled) return;
+  var dir = (_safetySettings.auto_backup.backup_dir || '/opt/backup').replace(/\/+$/, '');
+  _cwdNavigate(dir + '/');
+}
+
 async function _cwdGoHome() {
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
@@ -4888,7 +4960,6 @@ var _tips = [
   'Click file paths in output for actions: copy, edit, download, delete',
   '<kbd>Compare</kbd> — Run command on all servers, view results side-by-side',
   'Dangerous commands (rm, kill, reboot...) require confirmation before running',
-  '<kbd>★</kbd> Favorite commands for quick reuse',
   '<kbd>Aliases</kbd> — Define short names for common commands, auto-expand on input',
   '<kbd>Schedule</kbd> — Run commands on a timer, with optional silent mode',
   'Binary files: download and delete only. Text files: edit, copy, download, delete',
@@ -4918,7 +4989,6 @@ function _showHelpModal() {
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Run</b></td><td style="padding:3px 8px;color:#666">Execute command on selected servers</td></tr>'
     + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Compare</b></td><td style="padding:3px 8px;color:#666">Run command on all servers, view results side-by-side with sync scroll</td></tr>'
-    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>★ Favorites</b></td><td style="padding:3px 8px;color:#666">Pin and reuse common commands, stored per config</td></tr>'
     + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Aliases</b></td><td style="padding:3px 8px;color:#666">Short names for commands, auto-expand on input, drag to reorder</td></tr>'
     + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Schedule</b></td><td style="padding:3px 8px;color:#666">Run commands on a timer. Silent mode: log to file without output panel</td></tr>'
     + '</table>'
@@ -4939,6 +5009,19 @@ function _showHelpModal() {
     + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Minimap</b></td><td style="padding:3px 8px;color:#666">Right-side overview with diff markers, click to jump</td></tr>'
     + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Ctrl/Cmd+S</b></td><td style="padding:3px 8px;color:#666">Save current pane</td></tr>'
     + '</table>'
+    + '<div style="font-weight:bold;color:#2563eb;margin:12px 0 8px;font-size:14px">Safety Features</div>'
+    + '<div style="font-size:12px;color:#666;margin-bottom:6px">Click the <span style="color:#16a34a">\ud83d\udee1 Backup</span> indicator in the CWD bar to configure:</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Auto Backup</b></td><td style="padding:3px 8px;color:#666">Backup files before rm/mv/redirect. Aborts if backup fails.</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Dest Check</b></td><td style="padding:3px 8px;color:#666">Warn when cp/mv target already exists on server</td></tr>'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Server Warnings</b></td><td style="padding:3px 8px;color:#666">Tag servers by pattern (e.g. *prod* → PROD label with red badge)</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>Output Sync</b></td><td style="padding:3px 8px;color:#666">Multi-tab: off = each tab only shows its own output</td></tr>'
+    + '</table>'
+    + '<div style="font-weight:bold;color:#2563eb;margin:12px 0 8px;font-size:14px">Security</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<tr><td style="padding:3px 8px;white-space:nowrap"><b>Password Encryption</b></td><td style="padding:3px 8px;color:#666">Set master password at startup to encrypt config passwords as ENC(...)</td></tr>'
+    + '<tr style="background:#f8f8f8"><td style="padding:3px 8px;white-space:nowrap"><b>--no-encrypt</b></td><td style="padding:3px 8px;color:#666">Skip encryption, passwords remain plaintext</td></tr>'
+    + '</table>'
     + '<div style="margin-top:12px;font-size:11px;color:#aaa">Dangerous commands (rm, kill, reboot, systemctl restart...) require confirmation. PSMP proxy mode fully supported.</div>'
     + '</div>';
   document.querySelector('.modal').classList.add('wide');
@@ -4954,7 +5037,6 @@ loadTasks();
 loadCmdHistory();
 loadUploadHistory();
 loadAliases();
-_renderFavorites();
 // Restore T toggle state
 try {
   if (localStorage.getItem('ssh-ops-hide-ts')) {
@@ -5045,11 +5127,45 @@ async function _buildLogPanel() {
   html += '<div class="lp-field"><label class="lp-label">Keyword Filter (grep -E)</label>';
   html += '<input type="text" id="logKeywords" placeholder="e.g. ERROR|Exception|timeout"></div>';
 
+  // Quick commands
+  html += '<div class="lp-field"><label class="lp-label">Quick Commands</label>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+  window._quickLogCmds = [
+    ['Errors', 'grep -E -i "error|exception|fail" {log} | tail -30', 'grep last 30 error/exception/fail lines (case-insensitive)'],
+    ['Warnings', 'grep -i "warn" {log} | tail -30', 'grep last 30 warning lines (case-insensitive)'],
+    ['Count by level', 'awk \'BEGIN{e=0;w=0;i=0} /ERROR|error/{e++} /WARN|warn/{w++} /INFO|info/{i++} END{print "ERROR:",e,"  WARN:",w,"  INFO:",i}\' {log}', 'awk counts ERROR/WARN/INFO occurrences in log'],
+    ['Top repeats', 'sort {log} | uniq -c | sort -rn | head -20', 'sort | uniq -c finds most repeated log lines (log storms)'],
+    ['Per-hour count', 'awk -F"[: T]" \'{print $1":"$2}\' {log} | sort | uniq -c', 'awk extracts hour from each line, counts per hour'],
+    ['Last 50', 'tail -50 {log}', 'tail shows last 50 lines of log file'],
+    ['Stack traces', 'grep -E -A5 "Exception|Error" {log} | tail -60', 'grep exceptions with 5 lines of stack trace context'],
+  ];
+  for (var i = 0; i < _quickLogCmds.length; i++) {
+    var tip = _quickLogCmds[i][2] + '\n\n' + _quickLogCmds[i][1].replace(/\{log\}/g, '<log_path>');
+    html += '<button class="btn" style="font-size:10px;padding:2px 6px" title="' + tip.replace(/"/g, '&quot;') + '" onclick="runQuickLogCmd(' + i + ')">' + _quickLogCmds[i][0] + '</button>';
+  }
+  html += '</div></div>';
+
   document.getElementById('logPanelBody').innerHTML = html;
 }
 
 function showLogAnalyzer() {
   switchSidebarTab('logs');
+}
+
+function runQuickLogCmd(idx) {
+  var cmdTemplate = window._quickLogCmds[idx][1];
+  // Replace {log} with selected log path
+  var sel = document.getElementById('logSourceSelect');
+  var logPath = sel ? (sel.value || '') : '';
+  if (!logPath) {
+    var inp = document.getElementById('logPathInput');
+    logPath = inp ? inp.value.trim() : '';
+  }
+  var cmd = cmdTemplate.replace(/\{log\}/g, logPath || '/var/log/syslog');
+  var input = document.getElementById('cmdInput');
+  input.value = cmd;
+  input.focus();
+  input.select();
 }
 
 function logSourceChanged() {
@@ -5135,6 +5251,22 @@ async function runLogAnalysis() {
       return;
     }
     var results = data.results || {};
+    var serverNames = Object.keys(results);
+
+    // Multi-server summary line
+    if (serverNames.length > 1) {
+      var parts = [];
+      for (var si = 0; si < serverNames.length; si++) {
+        var sr = results[serverNames[si]];
+        if (sr.error) { parts.push(serverNames[si] + ': failed'); continue; }
+        var e = sr.errors || 0, w = sr.warnings || 0;
+        var status = e ? e + ' errors' : (w ? w + ' warnings' : 'clean');
+        parts.push(serverNames[si] + ': ' + status);
+      }
+      appendLine('Summary: ' + parts.join('  |  '));
+      appendLine('');
+    }
+
     for (var name in results) {
       var r = results[name];
       if (r.error) {
@@ -5142,26 +5274,33 @@ async function runLogAnalysis() {
         continue;
       }
       var fetched = r.lines_fetched || r.total_lines || 0;
+      var errs = r.errors || 0, warns = r.warnings || 0;
       var p = '[' + name + '] ';
-      appendLine(p + fetched.toLocaleString() + ' lines analyzed');
-      appendLine(p + 'Errors: ' + (r.errors || 0) + '  Warnings: ' + (r.warnings || 0));
-      if (r.top_errors && r.top_errors.length) {
-        appendLine(p + 'Top errors:');
-        for (var j = 0; j < Math.min(r.top_errors.length, 5); j++) {
-          var te = r.top_errors[j];
-          var pad = te.count < 10 ? '  ' : (te.count < 100 ? ' ' : '');
-          var lineRef = te.lines && te.lines.length ? ' (L' + te.lines.join(',L') + ')' : '';
-          appendLine(p + pad + te.count + 'x "' + te.pattern + '"' + lineRef);
-        }
+
+      if (!errs && !warns && !(r.findings && r.findings.length)) {
+        appendLine(p + 'No issues found (' + fetched.toLocaleString() + ' lines)');
+        continue;
       }
+
+      appendLine(p + errs + ' errors, ' + warns + ' warnings (' + fetched.toLocaleString() + ' lines)');
+
+      // Findings first — known issues with actionable suggestions
       if (r.findings && r.findings.length) {
-        appendLine(p + 'Findings:');
         for (var k = 0; k < r.findings.length; k++) {
           var f = r.findings[k];
           var icon = f.level === 'error' ? '\u2718' : '\u26a0';
-          var lineInfo = f.line ? ' (L' + f.line + ')' : '';
+          var lineInfo = f.line ? ' (line ' + f.line + ')' : '';
           appendLine(p + icon + ' ' + f.message + lineInfo);
-          if (f.suggestion) appendLine(p + '  \u2192 ' + f.suggestion);
+          if (f.suggestion) appendLine(p + '  \u21e8 ' + f.suggestion);
+        }
+      }
+
+      // Top errors — most frequent error messages
+      if (r.top_errors && r.top_errors.length) {
+        appendLine(p + 'Most frequent:');
+        for (var j = 0; j < Math.min(r.top_errors.length, 5); j++) {
+          var te = r.top_errors[j];
+          appendLine(p + '  ' + te.count + 'x  ' + te.pattern);
         }
       }
     }

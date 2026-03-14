@@ -121,6 +121,94 @@ def aggregate_top_errors(error_messages: list[tuple[str, int]], top_n: int = 10)
             for msg, data in sorted_errors[:top_n]]
 
 
+# --- Stack Trace Grouping ---
+
+# Lines that belong to a stack trace (continuation of an exception)
+_TRACE_LINE_RE = re.compile(r'^\s+(at |\.{3}\s+\d+\s+more)|^Caused by[: ]')
+_EXCEPTION_RE = re.compile(
+    r'(?:Exception|Error|Throwable|Fault)[\s:$]', re.IGNORECASE
+)
+
+
+def group_stack_traces(lines: list[str]) -> list[str]:
+    """Merge multi-line Java stack traces into single logical lines.
+
+    Input:
+        ERROR NullPointerException: foo
+          at com.example.A.method(A.java:10)
+          at com.example.B.call(B.java:20)
+        Caused by: IllegalStateException: bar
+          at com.example.C.init(C.java:5)
+        INFO normal line
+
+    Output:
+        ERROR NullPointerException: foo | at com.example.A.method(A.java:10) | Caused by: IllegalStateException: bar | at com.example.C.init(C.java:5)
+        INFO normal line
+
+    The merged line keeps the original exception as the primary text,
+    with stack frames joined by ' | ' for compact display.
+    """
+    result: list[str] = []
+    current_block: list[str] = []
+
+    def _flush():
+        if not current_block:
+            return
+        # First line is the exception, rest are stack trace / Caused by
+        merged = current_block[0]
+        # Keep only first 2 stack frames + root cause for brevity
+        frames = []
+        root_cause = ""
+        for sl in current_block[1:]:
+            stripped = sl.strip()
+            if stripped.startswith("Caused by"):
+                root_cause = stripped
+                frames = []  # reset frames — collect from root cause
+            elif stripped.startswith("at ") and len(frames) < 5:
+                frames.append(stripped)
+        if root_cause:
+            merged += " | " + root_cause
+        if frames:
+            merged += " | " + " | ".join(frames)
+        result.append(merged)
+
+    for line in lines:
+        if _TRACE_LINE_RE.match(line):
+            # Stack trace continuation
+            if current_block:
+                current_block.append(line)
+            else:
+                # Orphan stack line — keep as-is
+                result.append(line)
+        else:
+            # New line — flush any pending block
+            _flush()
+            current_block = []
+            # Check if this line starts a new exception
+            if _EXCEPTION_RE.search(line):
+                current_block = [line]
+            else:
+                result.append(line)
+    _flush()
+    return result
+
+
+def extract_root_cause(merged_line: str) -> str:
+    """Extract the root cause from a merged stack trace line.
+
+    Returns the innermost 'Caused by: ...' or the exception line itself.
+    """
+    # Find last "Caused by:" segment
+    parts = merged_line.split(" | ")
+    for part in reversed(parts):
+        stripped = part.strip()
+        if stripped.startswith("Caused by"):
+            # Extract just the exception class and message
+            return stripped
+    # No Caused by — return the first line (the exception itself)
+    return parts[0] if parts else merged_line
+
+
 # --- Analyzer Registry ---
 
 _analyzers: list[LogAnalyzer] = []

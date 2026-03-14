@@ -11,6 +11,7 @@ logs/
 config/.last_config
 config/.history/
 *.bak
+*.salt
 
 .coverage
 htmlcov/

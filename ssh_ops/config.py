@@ -214,25 +214,26 @@ def wrap_backup_command(command: str, cfg: AutoBackupConfig) -> str:
     sudo_pfx = "sudo " if has_sudo else ""
     backup_dir = cfg.backup_dir.rstrip("/")
 
-    # Handle redirect: cmd > /path/file
+    # Handle redirect: cmd > /path/file (skip stderr redirects like 2>/dev/null)
     if ">" in cfg.commands:
-        redirect_match = re.search(r'>\s*(\S+)', work_cmd)
+        redirect_match = re.search(r'(?<![0-9&])>\s*(\S+)', work_cmd)
         if redirect_match:
             target = redirect_match.group(1)
-            if any(c in target for c in '*?['):
-                return f"echo '[WARN] auto-backup skipped — wildcard target: {target}'; {command}"
-            if target.rstrip("/") == backup_dir or target.rstrip("/").startswith(backup_dir + "/"):
-                return command
-            clean = target.rstrip("/")
-            basename = clean.rsplit("/", 1)[-1] if "/" in clean else clean
-            bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
-            return (
-                f"{cd_prefix}"
-                f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
-                f"echo '[backup] {target} -> {backup_dir}'; "
-                f"{work_cmd}; "
-                f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
-            )
+            if target != '/dev/null':
+                if any(c in target for c in '*?['):
+                    return f"echo '[WARN] auto-backup skipped — wildcard target: {target}'; {command}"
+                if target.rstrip("/") == backup_dir or target.rstrip("/").startswith(backup_dir + "/"):
+                    return command
+                clean = target.rstrip("/")
+                basename = clean.rsplit("/", 1)[-1] if "/" in clean else clean
+                bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
+                return (
+                    f"{cd_prefix}"
+                    f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
+                    f"echo '[backup] {target} -> {backup_dir}'; "
+                    f"{work_cmd}; "
+                    f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+                )
 
     if base_cmd not in cfg.commands:
         return command
@@ -346,6 +347,7 @@ class ServerConfig:
         self.key_file = data.get("key_file")
         self.groups = data.get("groups", [])
         self.proxy = proxy
+        self._has_explicit_credentials = bool(self.password or data.get("key_file"))
 
         # Auto-detect SSH key if no password, no key_file, and no proxy
         if not self.password and not self.key_file and not self.proxy:
@@ -510,10 +512,11 @@ class AppConfig:
         except OSError:
             pass
 
-    def __init__(self, config_path: str | Path | None = None):
+    def __init__(self, config_path: str | Path | None = None, master_password: str | None = None):
         if config_path is None:  # pragma: no cover — CLI always provides a path
             config_path = DEFAULT_CONFIG
         self.config_path = Path(config_path).resolve()
+        self._master_password = master_password
 
         global_raw = _load_global_config()
 
@@ -525,7 +528,29 @@ class AppConfig:
         # servers, tasks, logs, proxy are env-only
         raw = _deep_merge(global_raw, env_raw)
 
-        self._load(raw)
+        # Auto-encrypt plaintext passwords and decrypt for use
+        if self._master_password:
+            self._auto_encrypt_and_decrypt()
+        else:
+            self._load(raw)
+
+    def _auto_encrypt_and_decrypt(self):
+        """If master password is set, encrypt any plaintext passwords in file, then decrypt for use."""
+        from ssh_ops.crypto import encrypt_passwords_in_yaml, decrypt_passwords_in_config, _get_salt
+
+        salt = _get_salt(self.config_path)
+        raw_text = self.config_path.read_text(encoding="utf-8")
+        encrypted_text = encrypt_passwords_in_yaml(raw_text, self._master_password, salt)
+
+        if encrypted_text != raw_text:
+            self.config_path.write_text(encrypted_text, encoding="utf-8")
+
+        parsed = yaml.safe_load(encrypted_text) or {}
+        parsed = _resolve_deep(parsed)
+        global_raw = _load_global_config()
+        merged = _deep_merge(global_raw, parsed)
+        decrypted = decrypt_passwords_in_config(merged, self._master_password, salt)
+        self._load(decrypted)
 
     def _load(self, raw: dict):
         """Load config from parsed YAML dict, resetting task counter."""
@@ -669,12 +694,15 @@ class AppConfig:
 
     def reload(self):
         """Re-read global + env config files and update all attributes in place."""
-        global_raw = _load_global_config()
-        with open(self.config_path, "r", encoding="utf-8") as f:
-            env_raw = yaml.safe_load(f) or {}
-        env_raw = _resolve_deep(env_raw)
-        raw = _deep_merge(global_raw, env_raw)
-        self._load(raw)
+        if self._master_password:
+            self._auto_encrypt_and_decrypt()
+        else:
+            global_raw = _load_global_config()
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                env_raw = yaml.safe_load(f) or {}
+            env_raw = _resolve_deep(env_raw)
+            raw = _deep_merge(global_raw, env_raw)
+            self._load(raw)
 
     def switch_config(self, config_path: str | Path):
         """Switch to a different config file and reload."""

@@ -75,7 +75,7 @@ def _build_log_command(path: str, mode: str, num_lines: int,
     return cmd
 
 
-def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
+def create_app(config: AppConfig, logger: ExecLogger, master_password: str | None = None) -> FastAPI:
     pool = ConnectionPool(config.keep_alive)
     executor = TaskExecutor(pool, logger, auto_backup=config.auto_backup)
     ws_clients: set[WebSocket] = set()
@@ -259,6 +259,7 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 "groups": s.groups,
                 "connected": s.name in pool.connected_servers(),
                 "needs_otp": s.needs_otp,
+                "has_credentials": s._has_explicit_credentials,
                 "warn": config.get_server_warn(s.name, s.host),
             }
             for s in config.servers
@@ -364,6 +365,7 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
     @app.post("/api/switch-config")
     async def switch_config(body: dict):
+        nonlocal master_password
         path = body.get("path", "")
         if not path:
             return {"error": "no path provided"}
@@ -372,8 +374,32 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             config_dir = config.config_path.parent.resolve()
             if not str(resolved).startswith(str(config_dir) + "/") and resolved.parent != config_dir:
                 return {"error": "config must be in config directory"}
+
+            # Check if new config has encrypted passwords
+            new_text = resolved.read_text(encoding="utf-8")
+            has_enc = "ENC(" in new_text
+
+            if has_enc and not master_password:
+                # Need master password from frontend
+                mp = body.get("master_password", "")
+                if not mp:
+                    return {"error": "encrypted", "message": f"Config '{resolved.name}' contains encrypted passwords", "needs_password": True}
+                master_password = mp
+
+            if body.get("master_password"):
+                master_password = body["master_password"]
+
+            config._master_password = master_password
             old_connected = pool.connected_servers()
-            config.switch_config(path)
+            try:
+                config.switch_config(path)
+            except Exception as e:
+                from cryptography.fernet import InvalidToken
+                if isinstance(e, InvalidToken) or (e.__cause__ and isinstance(e.__cause__, InvalidToken)):
+                    master_password = None
+                    config._master_password = None
+                    return {"error": "invalid_password", "message": f"Config '{resolved.name}' contains encrypted passwords", "needs_password": True}
+                raise
             pool.disconnect_all()
             _load_history()
             msg = "Switched to config: " + config.config_path.name
@@ -505,7 +531,12 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if body.get("username", "").strip():
             entry["username"] = body["username"].strip()
         if body.get("password", "").strip():
-            entry["password"] = body["password"].strip()
+            pw = body["password"].strip()
+            if master_password:
+                from ssh_ops.crypto import encrypt_value, _get_salt
+                salt = _get_salt(config.config_path)
+                pw = encrypt_value(pw, master_password, salt)
+            entry["password"] = pw
         if body.get("groups"):
             groups = body["groups"]
             if isinstance(groups, str):
@@ -571,6 +602,10 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 return {"error": "index out of range"}
             if password is None:
                 return {"status": "ok", "message": "no change"}
+            if master_password:
+                from ssh_ops.crypto import encrypt_value, _get_salt
+                salt = _get_salt(config.config_path)
+                password = encrypt_value(password, master_password, salt)
             servers[idx]["password"] = password
             dump_yaml(raw, config.config_path)
             server_name = servers[idx].get("name") or servers[idx].get("host", "")
@@ -651,6 +686,11 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             AppConfig._validate_raw(parsed)
         except Exception as e:
             return {"error": f"Config validation: {e}"}
+        # Auto-encrypt plaintext passwords if master password is set
+        if master_password:
+            from ssh_ops.crypto import encrypt_passwords_in_yaml, _get_salt
+            salt = _get_salt(config.config_path)
+            yaml_text = encrypt_passwords_in_yaml(yaml_text, master_password, salt)
         # Atomic write: write to temp file, then replace
         cfg_path = config.config_path
         bak_path = cfg_path.with_suffix(cfg_path.suffix + ".bak")
@@ -791,6 +831,36 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 results[server.name] = {"exists": False, "error": str(exc)}
 
         return {"results": results, "resolved_path": resolved_path}
+
+    @app.post("/api/check-backup")
+    async def check_backup():
+        """Check backup directory feasibility on all connected servers.
+        Returns per-server status: exists / creatable / no_permission.
+        """
+        if not config.auto_backup.enabled:
+            return {"enabled": False}
+
+        backup_dir = config.auto_backup.backup_dir.rstrip("/")
+        results = {}
+        for name in pool.connected_servers():
+            session = pool.get_session(name)
+            if not session:
+                continue
+            try:
+                qdir = _shell_quote(backup_dir)
+                # Check: exists? if not, can we create it?
+                cmd = (
+                    f"if [ -d {qdir} ] && [ -w {qdir} ]; then echo OK;"
+                    f"elif [ -d {qdir} ]; then echo NO_WRITE;"
+                    f"else mkdir -p {qdir} 2>/dev/null && echo CREATED && rmdir {qdir} 2>/dev/null || echo NO_PERM; fi"
+                )
+                lines, _ = _exhaust_generator(session.exec_command(cmd))
+                status = "".join(lines).strip()
+                results[name] = status
+            except Exception:
+                results[name] = "ERROR"
+
+        return {"enabled": True, "backup_dir": backup_dir, "results": results}
 
     @app.post("/api/add-task")
     async def add_task(body: dict):
@@ -946,11 +1016,54 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 break
         return {"status": "ok"}
 
+    def _save_runtime_passwords(targets, results, runtime_password):
+        """Save runtime-entered password to config for successfully connected servers."""
+        saved = []
+        try:
+            text = config.config_path.read_text(encoding="utf-8")
+            pw = runtime_password
+            if master_password:
+                from ssh_ops.crypto import encrypt_value, _get_salt
+                salt = _get_salt(config.config_path)
+                pw = encrypt_value(pw, master_password, salt)
+
+            for server in targets:
+                if results.get(server.name) != "connected":
+                    continue
+                # Find the server block by name and insert password after username
+                # Match: "- name: <name>\n  host: ...\n  ...\n  username: ...\n"
+                # Insert "  password: <pw>\n" after the last known field before next entry
+                import re
+                pattern = re.compile(
+                    r'(- name: ' + re.escape(server.name) + r'\n'
+                    r'(?:  \w[^\n]*\n)*)'  # all indented fields of this server
+                )
+                m = pattern.search(text)
+                if m:
+                    block = m.group(1)
+                    # Skip if password already exists in this block
+                    if re.search(r'^\s+password:', block, re.MULTILINE):
+                        continue
+                    # Detect indent from the block (e.g. "  host:" → 2 spaces)
+                    indent_m = re.search(r'^( +)\w', block, re.MULTILINE)
+                    indent = indent_m.group(1) if indent_m else "  "
+                    new_block = block.rstrip('\n') + f'\n{indent}password: {pw}\n'
+                    text = text[:m.start()] + new_block + text[m.end():]
+                    saved.append(server.name)
+
+            if saved:
+                config.config_path.write_text(text, encoding="utf-8")
+                config.reload()
+        except Exception:
+            pass  # best-effort save
+        return saved
+
     @app.post("/api/connect")
     async def connect_servers(body: dict):
-        """Connect to servers. Body: {"servers": [...], "otp": "..."} or {"all": true, "otp": "..."}"""
+        """Connect to servers. Body: {"servers": [...], "otp": "...", "password": "..."} or {"all": true, "otp": "..."}"""
         results = {}
         otp = body.get("otp")  # OTP for PSMP servers (shared across all)
+        runtime_password = body.get("password")  # password provided at connect time
 
         if body.get("all"):
             targets = config.servers
@@ -967,6 +1080,9 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
         def _connect_one(server):
             was_alive = pool.get_session(server.name) is not None
+            # Apply runtime password if server has no configured password
+            if runtime_password and not server.password:
+                server.password = runtime_password
             pool.connect(server, otp=otp if server.needs_otp else None)
             return "already_connected" if was_alive else "connected"
 
@@ -979,6 +1095,10 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                     results[server.name] = future.result()
                 except Exception as e:
                     results[server.name] = f"error: {e}"
+
+        # Auto-save runtime passwords to config for successfully connected servers
+        if runtime_password:
+            _save_runtime_passwords(targets, results, runtime_password)
 
         # Broadcast results after all connections complete
         for server in targets:
@@ -1373,10 +1493,15 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
         results = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(servers)) as ex:
-            futures = [ex.submit(_fetch_and_analyze, s) for s in servers]
-            for f in concurrent.futures.as_completed(futures):
-                name, data = f.result()
-                results[name] = data
+            futures = {ex.submit(_fetch_and_analyze, s): s for s in servers}
+            concurrent.futures.wait(futures)
+            # Preserve server list order
+            for s in servers:
+                for fut, srv in futures.items():
+                    if srv.name == s.name:
+                        name, data = fut.result()
+                        results[name] = data
+                        break
 
         return {"results": results}
 
@@ -1715,7 +1840,8 @@ def create_app_from_env() -> FastAPI:
 
     config_path = os.environ["_SSH_OPS_CONFIG"]
     log_dir = os.environ.get("_SSH_OPS_LOG_DIR", "")
+    master_password = os.environ.get("SSH_OPS_MASTER_PASSWORD")
 
-    config = AppConfig(config_path)
+    config = AppConfig(config_path, master_password=master_password)
     logger = ExecLogger(Path(log_dir) if log_dir else config.log_dir)
-    return create_app(config, logger)
+    return create_app(config, logger, master_password=master_password)

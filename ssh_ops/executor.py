@@ -60,11 +60,11 @@ class SSHSession:
                 "port": server.port,
                 "username": server.username,
             }
+            if server.password:
+                connect_args["password"] = server.password
             if server.key_file:
                 key_path = Path(server.key_file).expanduser().resolve()
                 connect_args["key_filename"] = str(key_path)
-            elif server.password:
-                connect_args["password"] = server.password
 
             self.client.connect(**connect_args)
 

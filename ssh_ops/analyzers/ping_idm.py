@@ -16,7 +16,7 @@ import json
 import re
 from collections import Counter, defaultdict
 
-from . import (Finding, LogAnalyzer, aggregate_top_errors, load_knowledge,
+from . import (Finding, LogAnalyzer, aggregate_top_errors, group_stack_traces, load_knowledge,
                match_patterns, register)
 
 # Component category mapping from logger names
@@ -90,6 +90,7 @@ class PingIDMAnalyzer(LogAnalyzer):
 
     def analyze(self, lines: list[str]) -> dict:
         total = len(lines)
+        lines = group_stack_traces(lines)
         # Detect format
         is_json = False
         for line in lines:

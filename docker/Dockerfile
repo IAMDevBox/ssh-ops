@@ -30,13 +30,13 @@ RUN mkdir -p /opt/ig/logs /opt/am/debug /opt/ds/logs /opt/idm/logs
 # PingGateway (IG) log — pipe-delimited format with routeId
 COPY test-logs/ig-route.log /opt/ig/logs/route-system.log
 
-# PingAM log — JSON format
+# PingAM log — legacy text format (amCategory:date: Thread[...])
 COPY test-logs/am-debug.log /opt/am/debug/amAuthentication
 
 # PingDS log — category/severity/msgID format
 COPY test-logs/ds-errors.log /opt/ds/logs/errors
 
-# PingIDM log — JSON format (logback JsonEncoder)
+# PingIDM log — legacy text format (timestamp level [thread] logger: message)
 COPY test-logs/idm-openidm.log /opt/idm/logs/openidm0.log
 
 # Generic syslog-style log

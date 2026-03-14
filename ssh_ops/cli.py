@@ -22,6 +22,10 @@ def main():
         "--reload", action="store_true",
         help="auto-reload on code changes (dev mode, serve only)"
     )
+    parser.add_argument(
+        "--no-encrypt", action="store_true",
+        help="skip master password prompt (passwords stored in plaintext)"
+    )
 
     sub = parser.add_subparsers(dest="command")
 
@@ -63,6 +67,9 @@ def main():
     serve_parser.add_argument("--port", type=int, help="bind port")
     serve_parser.add_argument("--reload", action="store_true", help="auto-reload on code changes (dev mode)")
 
+    # --- encrypt-passwords ---
+    sub.add_parser("encrypt-passwords", help="encrypt plaintext passwords in config file")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -83,7 +90,16 @@ def main():
             print("Hint: use 'ssh-ops serve' to start the web UI and create configs interactively.")
             sys.exit(1)
 
-    config = AppConfig(str(config_path))
+    # Handle encrypt-passwords before loading config
+    if args.command == "encrypt-passwords":
+        _do_encrypt_passwords(config_path)
+        return
+
+    # Detect if config has ENC() passwords — prompt for master password
+    no_encrypt = getattr(args, 'no_encrypt', False)
+    master_password = _detect_master_password(config_path, no_encrypt=no_encrypt)
+
+    config = AppConfig(str(config_path), master_password=master_password)
     AppConfig._save_last_config(config.config_path)
     logger = ExecLogger(config.log_dir)
 
@@ -96,7 +112,7 @@ def main():
     elif args.command == "upload":
         _do_upload(config, logger, args)
     elif args.command == "serve":
-        _do_serve(config, logger, args)
+        _do_serve(config, logger, args, master_password=master_password)
 
 
 def _do_list(config: AppConfig, args):
@@ -256,7 +272,111 @@ def _do_upload(config: AppConfig, logger: ExecLogger, args):
         pool.disconnect_all()
 
 
-def _do_serve(config: AppConfig, logger: ExecLogger, args):
+def _detect_master_password(config_path: Path, no_encrypt: bool = False) -> str | None:
+    """Get master password for config encryption/decryption.
+
+    Default: always prompt (or read from env).
+    --no-encrypt: skip entirely, passwords stay plaintext.
+    """
+    import os
+
+    if no_encrypt:
+        return None
+
+    # Try environment variable first
+    mp = os.environ.get("SSH_OPS_MASTER_PASSWORD")
+    if mp:
+        return mp
+
+    # Check if config has ENC() — if so, must prompt
+    has_enc = False
+    try:
+        text = config_path.read_text(encoding="utf-8")
+        has_enc = "ENC(" in text
+    except OSError:
+        pass
+
+    # Prompt user
+    import getpass
+    try:
+        if has_enc:
+            print(f"Config '{config_path.name}' contains encrypted passwords.")
+            print("Press Enter to start without decryption (passwords won't work).")
+            for attempt in range(3):
+                pw = getpass.getpass("Master password: ")
+                if not pw:
+                    print("Skipped — starting without decryption.")
+                    return None
+                # Verify password by trying to decrypt
+                from .crypto import _get_salt, decrypt_value
+                from cryptography.fernet import InvalidToken
+                salt = _get_salt(config_path)
+                # Find first ENC() value to test
+                import re
+                m = re.search(r'ENC\([^)]+\)', text)
+                if m:
+                    try:
+                        decrypt_value(m.group(), pw, salt)
+                        return pw
+                    except InvalidToken:
+                        remaining = 2 - attempt
+                        if remaining > 0:
+                            print(f"Wrong password. {remaining} attempts remaining.")
+                        else:
+                            print("Wrong password. Starting without decryption.")
+                            return None
+                else:
+                    return pw
+            return None
+        else:
+            print("Set an encryption password to protect server credentials in config.")
+            print("Press Enter to skip — passwords will remain in plaintext.")
+            pw = getpass.getpass("Encryption password: ")
+            return pw if pw else None
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.")
+        sys.exit(1)
+
+
+def _do_encrypt_passwords(config_path: Path):
+    """Encrypt all plaintext passwords in the config file."""
+    import getpass
+    from .crypto import encrypt_passwords_in_yaml, _get_salt
+
+    if not config_path.exists():
+        print(f"Error: config file not found: {config_path}")
+        sys.exit(1)
+
+    text = config_path.read_text(encoding="utf-8")
+
+    try:
+        pw1 = getpass.getpass("Set master password: ")
+        pw2 = getpass.getpass("Confirm master password: ")
+    except (EOFError, KeyboardInterrupt):
+        print("\nAborted.")
+        sys.exit(1)
+
+    if pw1 != pw2:
+        print("Error: passwords do not match")
+        sys.exit(1)
+    if not pw1:
+        print("Error: master password cannot be empty")
+        sys.exit(1)
+
+    salt = _get_salt(config_path)
+    encrypted = encrypt_passwords_in_yaml(text, pw1, salt)
+
+    if encrypted == text:
+        print("No plaintext passwords found — nothing to encrypt.")
+        return
+
+    config_path.write_text(encrypted, encoding="utf-8")
+    print(f"Passwords encrypted in {config_path}")
+    print(f"Salt file: {config_path.parent / (config_path.stem + '.salt')}")
+    print("IMPORTANT: Keep the .salt file safe. Without it, passwords cannot be decrypted.")
+
+
+def _do_serve(config: AppConfig, logger: ExecLogger, args, master_password: str | None = None):
     from .server import create_app
     import uvicorn
 
@@ -270,6 +390,8 @@ def _do_serve(config: AppConfig, logger: ExecLogger, args):
         env = os.environ.copy()
         env["_SSH_OPS_CONFIG"] = str(config.config_path)
         env["_SSH_OPS_LOG_DIR"] = str(logger.log_dir)
+        if master_password:
+            env["SSH_OPS_MASTER_PASSWORD"] = master_password
         cmd = [
             sys.executable, "-m", "uvicorn",
             "ssh_ops.server:create_app_from_env",
@@ -281,7 +403,7 @@ def _do_serve(config: AppConfig, logger: ExecLogger, args):
         ]
         subprocess.run(cmd, env=env)
     else:
-        app = create_app(config, logger)
+        app = create_app(config, logger, master_password=master_password)
         uvicorn.run(app, host=host, port=port)
 
 

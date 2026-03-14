@@ -9,8 +9,8 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-from . import (Finding, LogAnalyzer, aggregate_top_errors, load_knowledge,
-               match_patterns, register)
+from . import (Finding, LogAnalyzer, aggregate_top_errors, group_stack_traces,
+               load_knowledge, match_patterns, register)
 
 # Regex to strip common timestamp prefixes for error grouping
 _TIMESTAMP_RE = re.compile(
@@ -36,6 +36,8 @@ class GenericAnalyzer(LogAnalyzer):
 
     def analyze(self, lines: list[str]) -> dict:
         total = len(lines)
+        # Merge stack traces before analysis
+        lines = group_stack_traces(lines)
         error_count = 0
         warning_count = 0
         error_messages: list[str] = []
