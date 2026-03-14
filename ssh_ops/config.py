@@ -232,7 +232,7 @@ def wrap_backup_command(command: str, cfg: AutoBackupConfig) -> str:
                     f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
                     f"echo '[backup] {target} -> {backup_dir}'; "
                     f"{work_cmd}; "
-                    f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+                    f"else echo '[WARN] backup failed for {target} — command aborted'; exit 1; fi"
                 )
 
     if base_cmd not in cfg.commands:
@@ -274,7 +274,7 @@ def wrap_backup_command(command: str, cfg: AutoBackupConfig) -> str:
         f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
         f"echo '[backup] {target} -> {backup_dir}'; "
         f"{work_cmd}; "
-        f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+        f"else echo '[WARN] backup failed for {target} — command aborted'; exit 1; fi"
     )
 
 

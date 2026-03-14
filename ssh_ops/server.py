@@ -550,8 +550,6 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
             raw["servers"].append(entry)
             dump_yaml(raw, config.config_path)
             config.reload()
-            detail = entry.get("name") or host
-            await _broadcast(f"Server added: {detail}")
             return {"status": "ok", "server": entry}
         except Exception as e:
             return {"error": _friendly_error(e)}
@@ -1128,7 +1126,6 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
 
         for name in body.get("servers", []):
             pool.disconnect(name)
-            await _broadcast(f"[{name}] Disconnected")
         await _broadcast_server_status()
         return {"status": "ok"}
 
@@ -1701,7 +1698,6 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
                     results[s.name] = {"error": output or f"exit code {exit_code}"}
                 else:
                     results[s.name] = {"status": "ok"}
-                    await _broadcast(f"[{s.name}] Deleted: {file_path}")
             except Exception as e:
                 results[s.name] = {"error": str(e)}
         return {"results": results}
