@@ -1,0 +1,86 @@
+patterns:
+  - match: "Reconciliation failed"
+    level: error
+    category: sync
+    description: Reconciliation task failed
+    suggestion: Check mapping configuration, target system connectivity, and source query
+
+  - match: "sync retries"
+    level: warning
+    category: sync
+    description: Sync retries exhausted — change sent to dead letter queue
+    suggestion: Check dead letter queue entries and target system availability
+
+  - match: "dead letter queue"
+    level: warning
+    category: sync
+    description: Failed sync operation stored in dead letter queue
+    suggestion: Review and replay dead letter queue entries after fixing the root cause
+
+  - match: "Policy validation failed"
+    level: error
+    category: policy
+    description: Managed object policy validation failed
+    suggestion: Check managed object policy configuration (email format, password policy, etc.)
+
+  - match: "ConnectorException"
+    level: error
+    category: connector
+    description: ICF connector error — target system communication failed
+    suggestion: Check connector configuration, target system connectivity, and credentials
+
+  - match: "Connector error"
+    level: error
+    category: connector
+    description: Connector operation failed
+    suggestion: Check connector logs, target system health, and provisioner config
+
+  - match: "ScriptException"
+    level: error
+    category: script
+    description: Script execution error (JavaScript/Groovy)
+    suggestion: Check script syntax, variable bindings, and error handling
+
+  - match: "Script error"
+    level: error
+    category: script
+    description: Script failed during execution
+    suggestion: Review script logic, check for null/undefined references
+
+  - match: "LdapException"
+    level: error
+    category: connector
+    description: LDAP connector error
+    suggestion: Check DS connection pool, bind credentials, and base DN configuration
+
+  - match: "LDAP.*connection"
+    regex: true
+    level: error
+    category: connector
+    description: LDAP connection failure
+    suggestion: Check DS host/port, network connectivity, and connection pool settings
+
+  - match: "Scheduler.*failed"
+    regex: true
+    level: error
+    category: scheduler
+    description: Scheduled task execution failed
+    suggestion: Check cron expression, task script, and invocation context
+
+  - match: "OutOfMemoryError"
+    level: error
+    category: jvm
+    description: JVM out of memory during IDM operation
+    suggestion: Increase heap (-Xmx), optimize reconciliation batch size (taskThreads, pageSize)
+
+  - match: "workflow"
+    level: warning
+    category: workflow
+    description: BPMN workflow issue
+    suggestion: Check workflow definition, task assignments, and process variables
+
+  - match: "mapping"
+    level: warning
+    category: sync
+    description: Sync mapping issue
+    suggestion: Check source/target mapping configuration and correlation queries

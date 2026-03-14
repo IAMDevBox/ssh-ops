@@ -9,7 +9,7 @@ from typing import Generator
 
 import paramiko
 
-from .config import ServerConfig, TaskConfig, check_interactive_command
+from .config import ServerConfig, TaskConfig, AutoBackupConfig, check_interactive_command, wrap_backup_command
 from .logger import ExecLogger
 
 _ANSI_RE = re.compile(r'(\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07|\x1b\(B)')
@@ -285,9 +285,11 @@ class ConnectionPool:
 class TaskExecutor:
     """Executes tasks on servers."""
 
-    def __init__(self, pool: ConnectionPool, logger: ExecLogger):
+    def __init__(self, pool: ConnectionPool, logger: ExecLogger,
+                 auto_backup: AutoBackupConfig | None = None):
         self.pool = pool
         self.logger = logger
+        self.auto_backup = auto_backup
 
     def run_task(self, server: ServerConfig, task: TaskConfig) -> bool:
         """Run a single task on a server. Returns True on success."""
@@ -340,6 +342,19 @@ class TaskExecutor:
             self.logger.error(f"[{server.name}] dest must be file path, not directory: {task.dest}")
             return False
 
+        # Backup existing remote file before overwriting
+        if self.auto_backup and self.auto_backup.enabled:
+            bdir = self.auto_backup.backup_dir.rstrip("/")
+            fp = task.dest.rstrip("/")
+            if not (fp == bdir or fp.startswith(bdir + "/")):
+                bname = fp.rsplit("/", 1)[-1]
+                bak_cmd = f"mkdir -p {bdir} && cp -a {_shell_quote(fp)} {bdir}/$(date +%Y%m%d_%H%M%S)_{bname} 2>/dev/null; true"
+                try:
+                    _exhaust_generator(session.exec_command(bak_cmd, timeout=15))
+                    self.logger.info(f"[{server.name}] [backup] {fp} -> {bdir}")
+                except Exception:
+                    pass
+
         session.upload_file(src, task.dest, task.mode)
         self.logger.info(f"{src} -> {task.dest}")
         ts = datetime.now().strftime("%H:%M:%S")
@@ -356,7 +371,11 @@ class TaskExecutor:
         if interactive_err:
             self.logger.error(f"[{server.name}] {interactive_err}")
             return False
-        gen = session.exec_command(task.command, task.timeout, task.env)
+        exec_cmd = task.command
+        if self.auto_backup and self.auto_backup.enabled:
+            exec_cmd = wrap_backup_command(exec_cmd, self.auto_backup)
+
+        gen = session.exec_command(exec_cmd, task.timeout, task.env)
         lines, exit_code = _exhaust_generator(gen)
         exit_code = exit_code or 0
         for line in lines:

@@ -1,35 +1,48 @@
+# Docker test environment — use with docker/start.sh
+# Tests: server warnings (prod-app1 triggers PROD badge), auto-backup, dest check
+
 servers:
-- name: node1
+- name: dev-node1
   host: 127.0.0.1
   port: 2201
-  username: testuser
-  password: test123
+  username: admin
+  password: admin123
 
-- name: node2
+- name: dev-node2
   host: 127.0.0.1
   port: 2202
-  username: testuser
-  password: test123
+  username: admin
+  password: admin123
 
-- name: node3
+- name: prod-app1
   host: 127.0.0.1
   port: 2203
-  username: testuser
-  password: test123
+  username: admin
+  password: admin123
 
 tasks:
-# - command: hostname
-# - command: whoami
-# - command: uptime
+- command: hostname
 - command: df -h
-- command: echo "hello from ssh-ops"
-- command: sleep 10
-- command: ls -ltr /home/testuser/
-# - command: ls -la /var/data/
-- command: cat /etc/os-release
-#- command: /opt/app/wrong.sh
 - command: /opt/app/status.sh
+- command: cat /etc/os-release
+
 aliases:
-  ll: ls -l
-  nv: nv
-  igcheck: /opt
+  disk: "df -h"
+  mem: "free -m"
+
+logs:
+- name: ig-route
+  path: /opt/ig/logs/route-system.log
+  type: ping-gateway
+- name: am-auth
+  path: /opt/am/debug/amAuthentication
+  type: ping-am
+- name: ds-errors
+  path: /opt/ds/logs/errors
+  type: ping-ds
+- name: idm-main
+  path: /opt/idm/logs/openidm0.log
+  type: ping-idm
+- name: app-log
+  path: /var/log/app.log
+  type: generic

@@ -1,0 +1,80 @@
+patterns:
+  - match: "Login failed"
+    level: error
+    category: authentication
+    description: User authentication failed
+    suggestion: Check user credentials, auth module chain config, and account lockout status
+
+  - match: "Authentication failed"
+    level: error
+    category: authentication
+    description: Authentication module returned failure
+    suggestion: Check auth tree/chain configuration and module settings
+
+  - match: "Invalid session"
+    level: warning
+    category: session
+    description: Session token is invalid or corrupted
+    suggestion: Check session timeout settings and load balancer sticky sessions
+
+  - match: "Session not found"
+    level: warning
+    category: session
+    description: Session was not found in session store
+    suggestion: Check session persistence, CTS store connectivity, and session timeout
+
+  - match: "LDAP connection"
+    level: error
+    category: datastore
+    description: LDAP/DS connection issue
+    suggestion: Check DS connection pool settings, network connectivity, and DS health
+
+  - match: "LdapException"
+    level: error
+    category: datastore
+    description: LDAP operation error
+    suggestion: Check DS logs for details, verify bind credentials and base DN
+
+  - match: "OAuth2 token"
+    regex: true
+    level: warning
+    category: oauth2
+    description: OAuth2 token issue (expired, invalid, or revoked)
+    suggestion: Check token lifetime configuration and client settings
+
+  - match: "SAML.*signature"
+    regex: true
+    level: error
+    category: federation
+    description: SAML signature validation failed
+    suggestion: Check SP/IDP certificates, metadata, and signing algorithm settings
+
+  - match: "Policy evaluation failed"
+    level: error
+    category: authorization
+    description: Authorization policy evaluation failed
+    suggestion: Check policy definitions, subject attributes, and condition rules
+
+  - match: "CTS"
+    level: warning
+    category: session
+    description: Core Token Service (session store) issue
+    suggestion: Check CTS backend DS health and replication status
+
+  - match: "IDRepo"
+    level: warning
+    category: datastore
+    description: Identity repository operation issue
+    suggestion: Check identity store DS connectivity and configuration
+
+  - match: "OIDC"
+    level: warning
+    category: oauth2
+    description: OpenID Connect related issue
+    suggestion: Check OIDC provider configuration, client registration, and claims mapping
+
+  - match: "SSOToken"
+    level: warning
+    category: session
+    description: SSO token validation issue
+    suggestion: Check cookie domain settings, session service config, and load balancer

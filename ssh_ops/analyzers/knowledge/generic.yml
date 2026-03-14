@@ -1,0 +1,62 @@
+patterns:
+  - match: "OutOfMemoryError"
+    level: error
+    category: jvm
+    description: JVM out of memory
+    suggestion: Increase heap size (-Xmx) or investigate memory leaks
+
+  - match: "StackOverflowError"
+    level: error
+    category: jvm
+    description: Stack overflow — likely infinite recursion
+    suggestion: Check for recursive calls and increase stack size (-Xss) if needed
+
+  - match: "Connection refused"
+    level: error
+    category: network
+    description: Connection refused to remote service
+    suggestion: Verify the target service is running and port is correct
+
+  - match: "Connection timed out"
+    level: error
+    category: network
+    description: Connection timed out
+    suggestion: Check network connectivity and firewall rules
+
+  - match: "No space left on device"
+    level: error
+    category: disk
+    description: Disk full
+    suggestion: Free up disk space — check logs, temp files, and old backups
+
+  - match: "Too many open files"
+    level: error
+    category: system
+    description: File descriptor limit exceeded
+    suggestion: Increase ulimit -n or check for file descriptor leaks
+
+  - match: "Permission denied"
+    level: warning
+    category: access
+    description: Permission denied
+    suggestion: Check file permissions and ownership
+
+  - match: "killed"
+    regex: true
+    level: error
+    category: system
+    description: Process was killed (possibly OOM killer)
+    suggestion: Check dmesg for OOM killer activity
+
+  - match: "Segmentation fault"
+    level: error
+    category: system
+    description: Segmentation fault — memory access violation
+    suggestion: Check for native library issues or corrupted binaries
+
+  - match: "SSL"
+    regex: true
+    level: warning
+    category: tls
+    description: SSL/TLS related issue
+    suggestion: Check certificate validity, trust store, and protocol versions

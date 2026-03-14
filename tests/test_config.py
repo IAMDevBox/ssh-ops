@@ -10,11 +10,13 @@ import yaml
 
 from ssh_ops.config import (
     AppConfig,
+    AutoBackupConfig,
     ProxyConfig,
     ServerConfig,
     TaskConfig,
     check_interactive_command,
     is_modifying_command,
+    wrap_backup_command,
     _parse_server,
     _resolve_env_vars,
     _auto_detect_key,
@@ -785,3 +787,222 @@ class TestSaveLastConfig:
             # tmp_path config is not in _CONFIG_DIR, so no save
             AppConfig._save_last_config(tmp_path / "test.yml")
             assert not last_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# wrap_backup_command
+# ---------------------------------------------------------------------------
+
+def _cfg(**overrides):
+    """Helper to build AutoBackupConfig with defaults."""
+    defaults = dict(enabled=True, backup_dir="/opt/backup", commands=["rm", "mv", ">"])
+    defaults.update(overrides)
+    return AutoBackupConfig(**defaults)
+
+
+TS = "$(date +%Y%m%d_%H%M%S)"
+
+
+def _expect(cd="", sudo="", target="", basename="", work_cmd="", backup_dir="/opt/backup"):
+    """Build expected backup-wrapped command string."""
+    s = "sudo " if sudo else ""
+    bak = f"{backup_dir}/{TS}_{basename}"
+    return (
+        f"{cd}"
+        f"if {s}mkdir -p {backup_dir} && {s}cp -a {target} {bak}; then "
+        f"echo '[backup] {target} -> {backup_dir}'; "
+        f"{work_cmd}; "
+        f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+    )
+
+
+class TestWrapBackupCommand:
+    """100 % branch coverage for wrap_backup_command."""
+
+    # --- disabled / empty ---------------------------------------------------
+
+    def test_disabled_returns_unchanged(self):
+        assert wrap_backup_command("rm /tmp/f", _cfg(enabled=False)) == "rm /tmp/f"
+
+    def test_empty_command_returns_unchanged(self):
+        assert wrap_backup_command("", _cfg()) == ""
+
+    def test_whitespace_only_returns_unchanged(self):
+        assert wrap_backup_command("   ", _cfg()) == "   "
+
+    # --- rm basic ------------------------------------------------------------
+
+    def test_rm_simple(self):
+        result = wrap_backup_command("rm /tmp/f.txt", _cfg())
+        assert result == _expect(target="/tmp/f.txt", basename="f.txt", work_cmd="rm /tmp/f.txt")
+
+    def test_rm_with_flags(self):
+        result = wrap_backup_command("rm -rf /var/data/", _cfg())
+        assert result == _expect(target="/var/data/", basename="data", work_cmd="rm -rf /var/data/")
+
+    def test_rm_multiple_flags(self):
+        result = wrap_backup_command("rm -r -f /tmp/dir", _cfg())
+        assert result == _expect(target="/tmp/dir", basename="dir", work_cmd="rm -r -f /tmp/dir")
+
+    def test_rm_only_flags_no_target(self):
+        assert wrap_backup_command("rm -rf", _cfg()) == "rm -rf"
+
+    # --- mv basic ------------------------------------------------------------
+
+    def test_mv_simple(self):
+        result = wrap_backup_command("mv /tmp/a.txt /tmp/b.txt", _cfg())
+        assert result == _expect(target="/tmp/a.txt", basename="a.txt", work_cmd="mv /tmp/a.txt /tmp/b.txt")
+
+    def test_mv_with_flags(self):
+        result = wrap_backup_command("mv -f /tmp/a /tmp/b", _cfg())
+        assert result == _expect(target="/tmp/a", basename="a", work_cmd="mv -f /tmp/a /tmp/b")
+
+    # --- redirect (>) -------------------------------------------------------
+
+    def test_redirect_simple(self):
+        result = wrap_backup_command("echo hi > /tmp/out.txt", _cfg())
+        assert result == _expect(target="/tmp/out.txt", basename="out.txt", work_cmd="echo hi > /tmp/out.txt")
+
+    def test_redirect_no_slash_in_target(self):
+        result = wrap_backup_command("echo x > file.txt", _cfg())
+        assert result == _expect(target="file.txt", basename="file.txt", work_cmd="echo x > file.txt")
+
+    def test_redirect_not_in_commands(self):
+        """When > is not in commands list, redirect should not trigger backup."""
+        cfg = _cfg(commands=["rm", "mv"])
+        assert wrap_backup_command("echo hi > /tmp/out.txt", cfg) == "echo hi > /tmp/out.txt"
+
+    # --- cd prefix -----------------------------------------------------------
+
+    def test_cd_prefix_with_rm(self):
+        result = wrap_backup_command("cd /home && rm file.sh", _cfg())
+        assert result == _expect(cd="cd /home && ", target="file.sh", basename="file.sh", work_cmd="rm file.sh")
+
+    def test_cd_prefix_with_mv(self):
+        result = wrap_backup_command("cd /app && mv old.conf new.conf", _cfg())
+        assert result == _expect(cd="cd /app && ", target="old.conf", basename="old.conf", work_cmd="mv old.conf new.conf")
+
+    def test_cd_prefix_with_redirect(self):
+        result = wrap_backup_command("cd /tmp && echo data > out.log", _cfg())
+        assert result == _expect(cd="cd /tmp && ", target="out.log", basename="out.log", work_cmd="echo data > out.log")
+
+    # --- sudo ----------------------------------------------------------------
+
+    def test_sudo_rm(self):
+        result = wrap_backup_command("sudo rm /etc/old.conf", _cfg())
+        assert result == _expect(sudo=True, target="/etc/old.conf", basename="old.conf", work_cmd="sudo rm /etc/old.conf")
+
+    def test_sudo_mv(self):
+        result = wrap_backup_command("sudo mv /etc/a /etc/b", _cfg())
+        assert result == _expect(sudo=True, target="/etc/a", basename="a", work_cmd="sudo mv /etc/a /etc/b")
+
+    def test_sudo_redirect(self):
+        result = wrap_backup_command("sudo echo x > /etc/conf", _cfg())
+        assert result == _expect(sudo=True, target="/etc/conf", basename="conf", work_cmd="sudo echo x > /etc/conf")
+
+    def test_cd_and_sudo_rm(self):
+        result = wrap_backup_command("cd /etc && sudo rm old.conf", _cfg())
+        assert result == _expect(cd="cd /etc && ", sudo=True, target="old.conf", basename="old.conf", work_cmd="sudo rm old.conf")
+
+    # --- command not in commands list ----------------------------------------
+
+    def test_unmatched_command_unchanged(self):
+        assert wrap_backup_command("ls -la /tmp", _cfg()) == "ls -la /tmp"
+
+    def test_cat_unchanged(self):
+        assert wrap_backup_command("cat /tmp/file", _cfg()) == "cat /tmp/file"
+
+    # --- unknown command in commands list (else branch) ----------------------
+
+    def test_unknown_cmd_in_commands_list(self):
+        """If commands list has 'cp' but wrap_backup only handles rm/mv, returns unchanged."""
+        cfg = _cfg(commands=["cp"])
+        assert wrap_backup_command("cp /a /b", cfg) == "cp /a /b"
+
+    # --- backup_dir trailing slash -------------------------------------------
+
+    def test_backup_dir_trailing_slash_stripped(self):
+        cfg = _cfg(backup_dir="/opt/backup/")
+        result = wrap_backup_command("rm /tmp/f", cfg)
+        assert "/opt/backup//" not in result
+        assert result == _expect(target="/tmp/f", basename="f", work_cmd="rm /tmp/f")
+
+    # --- target with trailing slash ------------------------------------------
+
+    def test_target_trailing_slash_basename(self):
+        result = wrap_backup_command("rm -rf /var/log/old/", _cfg())
+        assert f"{TS}_old" in result
+        assert "[backup]" in result
+
+    # --- empty parts after sudo strip ----------------------------------------
+
+    def test_sudo_only_returns_unchanged(self):
+        assert wrap_backup_command("sudo ", _cfg()) == "sudo "
+
+    def test_cd_prefix_sudo_only_returns_unchanged(self):
+        """cd prefix + sudo with no actual command → empty parts → unchanged."""
+        assert wrap_backup_command("cd /x && sudo ", _cfg()) == "cd /x && sudo "
+
+    # --- mv only flags no target ---------------------------------------------
+
+    def test_mv_only_flags_no_target(self):
+        assert wrap_backup_command("mv -f", _cfg()) == "mv -f"
+
+    # --- glob patterns skip backup -------------------------------------------
+
+    def test_rm_star_warns_and_skips(self):
+        result = wrap_backup_command("rm *", _cfg())
+        assert result.startswith("echo '[WARN] auto-backup skipped")
+        assert result.endswith("; rm *")
+
+    def test_rm_prefix_star_warns(self):
+        result = wrap_backup_command("rm abc*", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+        assert "; rm abc*" in result
+
+    def test_rm_question_mark_warns(self):
+        result = wrap_backup_command("rm file?.txt", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+
+    def test_rm_bracket_warns(self):
+        result = wrap_backup_command("rm test[0-9]", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+
+    def test_mv_glob_warns(self):
+        result = wrap_backup_command("mv *.log /tmp/", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+        assert "; mv *.log /tmp/" in result
+
+    def test_redirect_glob_warns(self):
+        result = wrap_backup_command("echo x > /tmp/out_*", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+
+    def test_cd_rm_glob_warns(self):
+        result = wrap_backup_command("cd /opt && rm *.bak", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+        assert "; cd /opt && rm *.bak" in result
+
+    # --- skip backup for files inside backup directory -----------------------
+
+    def test_rm_inside_backup_dir_skips(self):
+        assert wrap_backup_command("rm /opt/backup/old_file", _cfg()) == "rm /opt/backup/old_file"
+
+    def test_rm_backup_dir_itself_skips(self):
+        assert wrap_backup_command("rm -rf /opt/backup", _cfg()) == "rm -rf /opt/backup"
+
+    def test_rm_backup_dir_trailing_slash_skips(self):
+        assert wrap_backup_command("rm -rf /opt/backup/", _cfg()) == "rm -rf /opt/backup/"
+
+    def test_sudo_rm_inside_backup_dir_skips(self):
+        assert wrap_backup_command("sudo rm /opt/backup/old", _cfg()) == "sudo rm /opt/backup/old"
+
+    def test_mv_from_backup_dir_skips(self):
+        """mv backs up the source; if source is in backup dir, skip."""
+        assert wrap_backup_command("mv /opt/backup/f /tmp/", _cfg()) == "mv /opt/backup/f /tmp/"
+
+    def test_redirect_to_backup_dir_skips(self):
+        assert wrap_backup_command("echo x > /opt/backup/log", _cfg()) == "echo x > /opt/backup/log"
+
+    def test_rm_outside_backup_dir_still_backed_up(self):
+        result = wrap_backup_command("rm /opt/other/file", _cfg())
+        assert "cp -a" in result

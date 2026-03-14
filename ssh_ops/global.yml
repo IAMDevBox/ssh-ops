@@ -1,0 +1,39 @@
+# Global configuration — shared across all environments
+# Values here are deep-merged with per-environment configs.
+# Environment configs override global settings where they overlap.
+
+settings:
+  log_dir: ./logs
+  keep_alive: 60
+  default_timeout: 120
+
+aliases:
+  ll: "ls -ltrah"
+  ports: "ss -tulpn"
+
+safety:
+  # Visual warning for servers (glob pattern matched against name and host)
+  # Wildcards: * (any chars), ? (single char), [abc] (character set)
+  server_warn_patterns:
+  - pattern: '*prod*'
+    label: PROD
+    color: '#dc2626'
+  - pattern: '*node2*'
+    label: TEST
+    color: '#eab308'
+  - pattern: '*node1*'
+    label: DEV
+    color: '#08e735'
+  auto_backup:
+    enabled: true
+    backup_dir: /opt/backup
+    commands:
+    - rm
+    - mv
+    - '>'
+  dest_check:
+    enabled: true
+    commands:
+    - cp
+    - mv
+    - '>'

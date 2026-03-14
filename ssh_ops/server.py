@@ -19,10 +19,14 @@ from ruamel.yaml import YAMLError as _RuamelYAMLError
 
 from ssh_ops.yaml_util import load_yaml, dump_yaml, dump_yaml_str, safe_load_str
 
-from .config import AppConfig, TaskConfig, check_interactive_command, is_modifying_command
+from .config import (
+    AppConfig, TaskConfig, check_interactive_command, is_modifying_command,
+    wrap_backup_command, GLOBAL_CONFIG,
+)
 from .executor import ConnectionPool, TaskExecutor, _exhaust_generator, _shell_quote
 from .logger import ExecLogger
 from .plugins import validate_file, get_plugins
+from .analyzers import analyze_log, get_analyzers
 
 MAX_HISTORY = 5000  # max lines to keep in memory
 
@@ -40,9 +44,40 @@ MAX_CMD_HISTORY = 50
 MAX_UPLOAD_HISTORY = 50
 
 
+def _build_log_command(path: str, mode: str, num_lines: int,
+                       time_from: str, time_to: str, keywords: str) -> str:
+    """Build a safe remote command to fetch log lines.
+
+    Modes:
+        tail — tail -n {N} {path}
+        time_range — awk '/^{from}/,/^{to}/' {path}
+
+    Optional keywords are piped through grep -E.
+    All user inputs are shell-quoted to prevent injection.
+    """
+    quoted_path = _shell_quote(path)
+
+    if mode == "time_range" and time_from:
+        quoted_from = _shell_quote(time_from)
+        if time_to:
+            quoted_to = _shell_quote(time_to)
+            cmd = f"awk '/{quoted_from}/,/{quoted_to}/' {quoted_path}"
+        else:
+            cmd = f"awk '/{quoted_from}/,0' {quoted_path}"
+    else:
+        n = max(1, min(int(num_lines), 100000))
+        cmd = f"tail -n {n} {quoted_path}"
+
+    if keywords:
+        quoted_kw = _shell_quote(keywords)
+        cmd = f"{cmd} | grep -E {quoted_kw}"
+
+    return cmd
+
+
 def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
     pool = ConnectionPool(config.keep_alive)
-    executor = TaskExecutor(pool, logger)
+    executor = TaskExecutor(pool, logger, auto_backup=config.auto_backup)
     ws_clients: set[WebSocket] = set()
     output_history: deque[str] = deque(maxlen=MAX_HISTORY)
     cmd_history: deque[str] = deque(maxlen=MAX_CMD_HISTORY)
@@ -104,11 +139,14 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
 
     app = FastAPI(title="SSH Ops Tool", lifespan=lifespan)
 
-    def _broadcast_from_thread(message: str):  # pragma: no cover — called from background threads at runtime
+    _tls = threading.local()  # thread-local storage for per-request client_id
+
+    def _broadcast_from_thread(message: str, source_client: str = ""):  # pragma: no cover — called from background threads at runtime
         """Thread-safe broadcast: schedule _broadcast on the main event loop."""
+        sc = source_client or getattr(_tls, "client_id", "")
         loop = _main_loop
         if loop is not None and loop.is_running():
-            asyncio.run_coroutine_threadsafe(_broadcast(message), loop)
+            asyncio.run_coroutine_threadsafe(_broadcast(message, sc), loop)
 
     # Task execution progress state — 2D matrix: servers × tasks
     _task_status: dict = {"running": False}
@@ -221,6 +259,7 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 "groups": s.groups,
                 "connected": s.name in pool.connected_servers(),
                 "needs_otp": s.needs_otp,
+                "warn": config.get_server_warn(s.name, s.host),
             }
             for s in config.servers
         ]
@@ -313,6 +352,7 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         try:
             old_connected = pool.connected_servers()
             config.reload()
+            executor.auto_backup = config.auto_backup
             pool.disconnect_all()
             msg = "Config reloaded: " + config.config_path.name
             if old_connected:
@@ -639,6 +679,119 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         except Exception as e:
             return {"error": f"Failed to save: {e}"}
 
+    # --- Global config ---
+    @app.get("/api/global-config")
+    async def get_global_config():
+        """Return global.yml content."""
+        if not GLOBAL_CONFIG.exists():
+            return PlainTextResponse("")
+        return PlainTextResponse(GLOBAL_CONFIG.read_text(encoding="utf-8"))
+
+    @app.post("/api/global-config")
+    async def save_global_config(body: dict):
+        """Save global.yml content. Body: {"yaml": "..."}"""
+        yaml_text = body.get("yaml", "")
+        if not yaml_text.strip():
+            return {"error": "Empty YAML content"}
+        try:
+            parsed = safe_load_str(yaml_text)
+        except Exception as e:
+            return {"error": _friendly_error(e)}
+        if parsed is not None and not isinstance(parsed, dict):
+            return {"error": "Global config must be a YAML mapping"}
+        try:
+            bak = GLOBAL_CONFIG.with_suffix(".yml.bak")
+            if GLOBAL_CONFIG.exists():
+                shutil.copy2(GLOBAL_CONFIG, bak)
+            GLOBAL_CONFIG.write_text(yaml_text, encoding="utf-8")
+            config.reload()
+            await _broadcast("Global config updated and reloaded")
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": f"Failed to save: {e}"}
+
+    @app.get("/api/safety-settings")
+    async def get_safety_settings():
+        """Return current safety settings for the frontend."""
+        return config.get_safety_settings()
+
+    @app.post("/api/update-safety")
+    async def update_safety(body: dict):
+        """Update safety section in global.yml and reload.
+        Body: {"server_warn_patterns": [...], "auto_backup": {...}, "dest_check": {...}}
+        """
+        try:
+            # Load current global config
+            if GLOBAL_CONFIG.exists():
+                raw = load_yaml(GLOBAL_CONFIG) or {}
+            else:
+                raw = {}
+            # Update safety section
+            raw["safety"] = body
+            # Backup and save
+            bak = GLOBAL_CONFIG.with_suffix(".yml.bak")
+            if GLOBAL_CONFIG.exists():
+                shutil.copy2(GLOBAL_CONFIG, bak)
+            dump_yaml(raw, GLOBAL_CONFIG)
+            config.reload()
+            await _broadcast("Safety settings updated")
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": _friendly_error(e)}
+
+    # --- Check path existence on remote servers ---
+    @app.post("/api/check-path")
+    async def check_path(body: dict):
+        """Check if a path exists on selected servers.
+        Body: {"servers": [...], "path": "/some/path"}
+        Returns: {"results": {"server1": {"exists": true}, ...}}
+        """
+        server_names = body.get("servers", [])
+        target_path = body.get("path", "").strip()
+        source_basename = body.get("source_basename", "").strip()
+        if not target_path:
+            return {"error": "no path provided"}
+        servers = config.filter_servers(server_names)
+        if not servers:
+            return {"error": "no servers matched"}
+
+        results = {}
+        resolved_path = target_path  # will update if dir detected
+        for server in servers:
+            session = pool.get_session(server.name)
+            if not session:
+                results[server.name] = {"exists": False, "error": "not connected"}
+                continue
+            try:
+                qpath = _shell_quote(target_path)
+                # If dest is a directory and we have source basename,
+                # check dest/basename instead (the actual file that would be overwritten)
+                if source_basename:
+                    real_path = target_path.rstrip("/") + "/" + source_basename
+                    qreal = _shell_quote(real_path)
+                    # Returns DIR_YES/DIR_NO if directory, FILE_YES/FILE_NO if not
+                    check_cmd = (
+                        f"if [ -d {qpath} ]; then "
+                        f"test -e {qreal} && echo DIR_YES || echo DIR_NO; "
+                        f"else test -e {qpath} && echo FILE_YES || echo FILE_NO; fi"
+                    )
+                    lines, _ = _exhaust_generator(session.exec_command(check_cmd))
+                    output = "".join(lines).strip()
+                    if output.startswith("DIR_"):
+                        resolved_path = real_path
+                        results[server.name] = {"exists": output == "DIR_YES"}
+                    else:
+                        results[server.name] = {"exists": output == "FILE_YES"}
+                else:
+                    check_cmd = f"test -e {qpath} && echo YES || echo NO"
+                    lines, _ = _exhaust_generator(session.exec_command(check_cmd))
+                    output = "".join(lines).strip()
+                    results[server.name] = {"exists": output == "YES"}
+            except Exception as exc:
+                results[server.name] = {"exists": False, "error": str(exc)}
+
+        return {"results": results, "resolved_path": resolved_path}
+
     @app.post("/api/add-task")
     async def add_task(body: dict):
         """Add a task to the config file. Body: {"type":"command","command":"..."} or {"type":"upload","src":"...","dest":"...","mode":"..."}"""
@@ -903,8 +1056,11 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not tasks:
             return {"error": "no tasks found"}
 
+        client_id = body.get("client_id", "")
+
         # Run in background thread to not block
         def _run():
+            _tls.client_id = client_id
             _cancel_event.clear()
             task_names = [t.name for t in tasks]
             server_names = [s.name for s in servers]
@@ -958,7 +1114,9 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         """Run ad-hoc command. Body: {"servers": [...], "command": "...", "silent": false}"""
         server_names = body.get("servers", [])
         command = body.get("command", "").strip()
+        history_cmd = body.get("history", "").strip()
         silent = body.get("silent", False)
+        client_id = body.get("client_id", "")
         if not command:
             return {"error": "no command provided"}
         interactive_err = check_interactive_command(command)
@@ -969,13 +1127,15 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not servers:
             return {"error": "no servers matched"}
 
-        # Save to history (deduplicate: remove if exists, then append)
-        if command in cmd_history:
-            cmd_history.remove(command)
-        cmd_history.append(command)
-        _save_history()
+        # Save to history only when explicitly requested (user-typed commands)
+        if history_cmd:
+            if history_cmd in cmd_history:
+                cmd_history.remove(history_cmd)
+            cmd_history.append(history_cmd)
+            _save_history()
 
         def _run():
+            _tls.client_id = client_id
             failed = 0
             total = len(servers)
             for server in servers:
@@ -992,7 +1152,12 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                     logger.info(f"[{server.name}] $ {command}")
                 logger.write_exec_log(log_path, f"\n[{ts}] $ {command}\n")
                 try:
-                    lines, exit_code = _exhaust_generator(session.exec_command(command))
+                    exec_cmd = command
+                    if config.auto_backup and config.auto_backup.enabled:
+                        exec_cmd = wrap_backup_command(command, config.auto_backup)
+                    if exec_cmd != command:
+                        logger.debug(f"[{server.name}] [backup] {exec_cmd}")
+                    lines, exit_code = _exhaust_generator(session.exec_command(exec_cmd))
                 except Exception as exc:
                     err_msg = str(exc)
                     logger.error(f"[{server.name}] '{command}' failed: {err_msg}")
@@ -1094,6 +1259,127 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         """List available validation plugins."""
         return [{"name": p.name, "description": p.description} for p in get_plugins()]
 
+    # ── Log Analyzer API ──────────────────────────────────────────
+
+    @app.get("/api/log-sources")
+    async def list_log_sources():
+        """Return configured log sources from YAML."""
+        return [ls.to_dict() for ls in config.log_sources]
+
+    @app.get("/api/analyzers")
+    async def list_analyzers():
+        """List available log analyzers."""
+        return [{"name": a.name, "description": a.description} for a in get_analyzers()]
+
+    @app.post("/api/add-log-source")
+    async def add_log_source(body: dict):
+        """Add a log source to config. Body: {"name": "...", "path": "...", "type": "generic"}"""
+        name = body.get("name", "").strip()
+        path = body.get("path", "").strip()
+        log_type = body.get("type", "generic").strip()
+        if not name:
+            return {"error": "name is required"}
+        if not path:
+            return {"error": "path is required"}
+        if not path.startswith("/"):
+            return {"error": "path must be absolute"}
+        try:
+            raw = load_yaml(config.config_path) or {}
+            if "logs" not in raw:
+                raw["logs"] = []
+            # Check duplicate name
+            for ls in raw["logs"]:
+                if ls.get("name") == name:
+                    return {"error": f"log source '{name}' already exists"}
+            entry = {"name": name, "path": path, "type": log_type}
+            raw["logs"].append(entry)
+            dump_yaml(raw, config.config_path)
+            config.reload()
+            return {"status": "ok", "source": entry}
+        except Exception as e:
+            return {"error": _friendly_error(e)}
+
+    @app.post("/api/delete-log-source")
+    async def delete_log_source(body: dict):
+        """Delete a log source by index. Body: {"index": 0}"""
+        idx = body.get("index")
+        if idx is None:
+            return {"error": "no index provided"}
+        if not isinstance(idx, int):
+            return {"error": "index must be an integer"}
+        try:
+            raw = load_yaml(config.config_path) or {}
+            logs = raw.get("logs", [])
+            if idx < 0 or idx >= len(logs):
+                return {"error": "index out of range"}
+            removed = logs.pop(idx)
+            dump_yaml(raw, config.config_path)
+            config.reload()
+            return {"status": "ok", "removed": removed}
+        except Exception as e:
+            return {"error": _friendly_error(e)}
+
+    @app.post("/api/analyze-logs")
+    async def analyze_logs_endpoint(body: dict):
+        """Analyze remote log files via SSH.
+
+        Body: {
+            "servers": ["node1", "node2"],
+            "log_path": "/path/to/log",
+            "log_type": "generic",
+            "mode": "tail",               // "tail" | "time_range"
+            "lines": 2000,                // tail mode
+            "time_from": "2026-03-13 08:00",  // time_range mode
+            "time_to": "2026-03-13 09:00",
+            "keywords": "ERROR|Exception"     // optional grep filter
+        }
+        """
+        import concurrent.futures
+
+        server_names = body.get("servers", [])
+        log_path = body.get("log_path", "").strip()
+        log_type = body.get("log_type", "generic").strip()
+        mode = body.get("mode", "tail").strip()
+        num_lines = body.get("lines", 2000)
+        time_from = body.get("time_from", "").strip()
+        time_to = body.get("time_to", "").strip()
+        keywords = body.get("keywords", "").strip()
+
+        if not log_path:
+            return {"error": "log_path is required"}
+        if not log_path.startswith("/"):
+            return {"error": "log_path must be absolute"}
+
+        servers = config.filter_servers(server_names)
+        if not servers:
+            return {"error": "no servers matched"}
+
+        # Build the remote command
+        cmd = _build_log_command(log_path, mode, num_lines, time_from, time_to, keywords)
+
+        def _fetch_and_analyze(server):
+            session = pool.get_session(server.name)
+            if not session:
+                return server.name, {"error": "Not connected"}
+            try:
+                lines_out, exit_code = _exhaust_generator(session.exec_command(cmd))
+                if exit_code and exit_code != 0 and not lines_out:
+                    return server.name, {"error": f"Command failed (exit {exit_code})"}
+                analysis = analyze_log(log_type, lines_out)
+                analysis["lines_fetched"] = len(lines_out)
+                return server.name, analysis
+            except Exception as e:
+                return server.name, {"error": str(e)}
+
+        results = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(servers)) as ex:
+            futures = [ex.submit(_fetch_and_analyze, s) for s in servers]
+            for f in concurrent.futures.as_completed(futures):
+                name, data = f.result()
+                results[name] = data
+
+        return {"results": results}
+
     @app.post("/api/enable-sftp")
     async def enable_sftp(body: dict):
         """Open SFTP for one PSMP server. Body: {"server": "name", "otp": "..."}"""
@@ -1169,6 +1455,22 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         try:
             if session.needs_sftp_otp:
                 return {"need_sftp_otp": True, "server": server_name}
+
+            # Backup before overwrite if enabled
+            if config.auto_backup and config.auto_backup.enabled:
+                backup_dir = config.auto_backup.backup_dir.rstrip("/")
+                # Skip if file is inside backup directory
+                if not (file_path.rstrip("/") == backup_dir or file_path.startswith(backup_dir + "/")):
+                    basename = file_path.rsplit("/", 1)[-1]
+                    bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
+                    bak_cmd = f"mkdir -p {backup_dir} && cp -a {_shell_quote(file_path)} {bak} 2>/dev/null"
+                    try:
+                        bak_lines, bak_rc = _exhaust_generator(session.exec_command(bak_cmd, timeout=15))
+                        if bak_rc == 0:
+                            await _broadcast(f"[{server_name}] [backup] {file_path} -> {backup_dir}")
+                    except Exception:
+                        pass  # best-effort backup
+
             if session.has_sftp:
                 session.sftp_write_file(file_path, content)
                 await _broadcast(f"[{server_name}] File saved: {file_path}")
@@ -1252,6 +1554,13 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         if not servers:
             return {"error": "no servers matched"}
 
+        # Wrap with backup if enabled
+        rm_cmd = f"rm -f {_shell_quote(file_path)} 2>&1"
+        if config.auto_backup and config.auto_backup.enabled:
+            rm_cmd = wrap_backup_command(f"rm {_shell_quote(file_path)}", config.auto_backup)
+            # Append 2>&1 for stderr capture
+            rm_cmd += " 2>&1"
+
         results = {}
         for s in servers:
             session = pool.get_session(s.name)
@@ -1260,10 +1569,11 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                 continue
             try:
                 lines, exit_code = _exhaust_generator(
-                    session.exec_command(f"rm -f {_shell_quote(file_path)} 2>&1", timeout=15)
+                    session.exec_command(rm_cmd, timeout=15)
                 )
+                output = "\n".join(lines) if lines else ""
                 if exit_code and exit_code != 0:
-                    results[s.name] = {"error": "\n".join(lines) if lines else f"exit code {exit_code}"}
+                    results[s.name] = {"error": output or f"exit code {exit_code}"}
                 else:
                     results[s.name] = {"status": "ok"}
                     await _broadcast(f"[{s.name}] Deleted: {file_path}")
@@ -1277,6 +1587,7 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
         dest: str = Form(...),
         servers: str = Form(""),
         mode: str = Form(""),
+        client_id: str = Form(""),
     ):
         """Upload file via multipart form. dest must be an absolute file path."""
         if not dest.startswith("/"):
@@ -1307,14 +1618,30 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
                     results[server.name] = "not connected"
                     continue
                 try:
+                    # Auto-backup existing file before overwriting
+                    if config.auto_backup and config.auto_backup.enabled:
+                        bdir = config.auto_backup.backup_dir.rstrip("/")
+                        bname = dest.rstrip("/").rsplit("/", 1)[-1]
+                        backup_cmd = (
+                            f"mkdir -p {bdir} && "
+                            f"cp -a {dest} {bdir}/$(date +%Y%m%d_%H%M%S)_{bname} "
+                            f"2>/dev/null; true"
+                        )
+                        try:
+                            list(_exhaust_generator(
+                                session.exec_command(backup_cmd, timeout=15)
+                            ))
+                        except Exception:
+                            pass  # best-effort
                     session.upload_file(str(tmp_file), dest, mode or None)
                     results[server.name] = "uploaded"
                     await _broadcast(
-                        f"[{server.name}] Uploaded: {safe_filename} -> {dest}"
+                        f"[{server.name}] Uploaded: {safe_filename} -> {dest}",
+                        client_id
                     )
                 except Exception as e:
                     results[server.name] = f"error: {e}"
-                    await _broadcast(f"[{server.name}] Upload failed: {e}")
+                    await _broadcast(f"[{server.name}] Upload failed: {e}", client_id)
 
         # Save to upload history
         entry = {"filename": safe_filename, "dest": dest}
@@ -1345,16 +1672,36 @@ def create_app(config: AppConfig, logger: ExecLogger) -> FastAPI:
             pass
         try:
             while True:
-                await ws.receive_text()  # Keep connection alive
+                data = await ws.receive_text()
+                # Client can send JSON to set its client_id
+                try:
+                    msg = json.loads(data)
+                    if msg.get("type") == "register":
+                        ws._client_id = msg.get("client_id", "")
+                except (json.JSONDecodeError, ValueError):
+                    pass
         except WebSocketDisconnect:
             ws_clients.discard(ws)
 
-    async def _broadcast(message: str):
+    async def _broadcast(message: str, source_client: str = ""):
         output_history.append(message)
+        # Build the wire message: tag text output with source for client-side filtering
+        if source_client and message and message[0] == '{':
+            # Already JSON (progress, server_status) — inject source field
+            try:
+                obj = json.loads(message)
+                obj["source"] = source_client
+                wire = json.dumps(obj)
+            except (json.JSONDecodeError, ValueError):
+                wire = json.dumps({"type": "output", "source": source_client, "text": message})
+        elif source_client:
+            wire = json.dumps({"type": "output", "source": source_client, "text": message})
+        else:
+            wire = message
         dead = set()
         for ws in ws_clients:
             try:
-                await ws.send_text(message)
+                await ws.send_text(wire)
             except Exception:  # pragma: no cover — dead client cleanup
                 dead.add(ws)
         ws_clients.difference_update(dead)

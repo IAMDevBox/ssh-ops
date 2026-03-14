@@ -2,6 +2,7 @@
 
 import os
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ import yaml  # used by safe_load for config reading
 
 _CONFIG_DIR = Path(__file__).parent.parent / "config"
 DEFAULT_CONFIG = _CONFIG_DIR / "default.yml"
+GLOBAL_CONFIG = Path(__file__).parent / "global.yml"
 _LAST_CONFIG_FILE = _CONFIG_DIR / ".last_config"
 DEFAULT_KEY_PATHS = ["~/.ssh/id_rsa", "~/.ssh/id_ed25519"]
 
@@ -130,6 +132,149 @@ def _resolve_deep(obj: Any) -> Any:
         return [_resolve_deep(item) for item in obj]
     return obj
 
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Deep-merge two dicts. override wins for non-dict values."""
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _load_global_config() -> dict:
+    """Load global.yml if it exists, with env var resolution."""
+    if not GLOBAL_CONFIG.exists():
+        return {}
+    with open(GLOBAL_CONFIG, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    return _resolve_deep(raw)
+
+
+@dataclass
+class ServerWarnPattern:
+    """Glob pattern to flag servers with a visual warning.
+
+    Uses fnmatch-style wildcards: * ? [abc]
+    Examples: "prod*", "*prod*", "p*", "*.prod.*"
+    """
+    pattern: str
+    label: str
+    color: str
+
+
+@dataclass
+class AutoBackupConfig:
+    """Auto-backup settings for destructive commands."""
+    enabled: bool = False
+    backup_dir: str = "/opt/backup"
+    commands: list[str] = field(default_factory=lambda: ["rm", "mv", ">"])
+
+
+@dataclass
+class DestCheckConfig:
+    """Destination existence check settings."""
+    enabled: bool = False
+    commands: list[str] = field(default_factory=lambda: ["cp", "mv", ">"])
+
+
+def wrap_backup_command(command: str, cfg: AutoBackupConfig) -> str:
+    """Wrap a command with a backup prefix if it matches auto_backup commands.
+
+    The backup is best-effort: uses ; (not &&) so the original command
+    still runs even if backup fails.
+    """
+    if not cfg.enabled or not command.strip():
+        return command
+
+    stripped = command.strip()
+
+    # Handle "cd /dir && actual_cmd" prefix from cwd prepend
+    cd_prefix = ""
+    work_cmd = stripped
+    cd_match = re.match(r'^(cd\s+\S+\s*&&\s*)', stripped)
+    if cd_match:
+        cd_prefix = cd_match.group(1)
+        work_cmd = stripped[len(cd_prefix):]
+
+    has_sudo = False
+    work = work_cmd.strip()
+    if work.startswith("sudo "):
+        has_sudo = True
+        work = work[5:].strip()
+
+    parts = work.split()
+    if not parts:
+        return command
+
+    base_cmd = parts[0]
+    sudo_pfx = "sudo " if has_sudo else ""
+    backup_dir = cfg.backup_dir.rstrip("/")
+
+    # Handle redirect: cmd > /path/file
+    if ">" in cfg.commands:
+        redirect_match = re.search(r'>\s*(\S+)', work_cmd)
+        if redirect_match:
+            target = redirect_match.group(1)
+            if any(c in target for c in '*?['):
+                return f"echo '[WARN] auto-backup skipped — wildcard target: {target}'; {command}"
+            if target.rstrip("/") == backup_dir or target.rstrip("/").startswith(backup_dir + "/"):
+                return command
+            clean = target.rstrip("/")
+            basename = clean.rsplit("/", 1)[-1] if "/" in clean else clean
+            bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
+            return (
+                f"{cd_prefix}"
+                f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
+                f"echo '[backup] {target} -> {backup_dir}'; "
+                f"{work_cmd}; "
+                f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+            )
+
+    if base_cmd not in cfg.commands:
+        return command
+
+    # Extract target path based on command type
+    target = None
+    if base_cmd == "rm":
+        # rm [flags] path — last non-flag arg
+        for p in reversed(parts[1:]):
+            if not p.startswith("-"):
+                target = p
+                break
+    elif base_cmd == "mv":
+        # mv [flags] src dest — backup src (first non-flag arg)
+        for p in parts[1:]:
+            if not p.startswith("-"):
+                target = p
+                break
+    else:
+        return command
+
+    if not target:
+        return command
+
+    # Skip backup for glob patterns — can't reliably backup wildcards
+    if any(c in target for c in '*?['):
+        return f"echo '[WARN] auto-backup skipped — wildcard target: {target}'; {command}"
+
+    # Skip backup for files inside the backup directory itself
+    if target.rstrip("/") == backup_dir or target.rstrip("/").startswith(backup_dir + "/"):
+        return command
+
+    clean = target.rstrip("/")
+    basename = clean.rsplit("/", 1)[-1] if "/" in clean else clean
+    bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
+    return (
+        f"{cd_prefix}"
+        f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
+        f"echo '[backup] {target} -> {backup_dir}'; "
+        f"{work_cmd}; "
+        f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+    )
 
 
 def _auto_detect_key() -> str | None:
@@ -318,6 +463,27 @@ class TaskConfig:
         return f"Task({self.name}, type={self.type})"
 
 
+class LogSourceConfig:
+    """A pre-configured remote log source."""
+
+    def __init__(self, data: dict):
+        self.name = data.get("name", "")
+        self.path = data.get("path", "")
+        self.type = data.get("type", "generic")
+        if not self.name:
+            raise ValueError("Log source missing 'name'")
+        if not self.path:
+            raise ValueError(f"Log source '{self.name}' missing 'path'")
+        if not self.path.startswith("/"):
+            raise ValueError(f"Log source '{self.name}': path must be absolute, got '{self.path}'")
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "path": self.path, "type": self.type}
+
+    def __repr__(self):
+        return f"LogSource({self.name}, {self.path}, type={self.type})"
+
+
 class AppConfig:
     @staticmethod
     def default_config_path() -> Path:
@@ -349,10 +515,15 @@ class AppConfig:
             config_path = DEFAULT_CONFIG
         self.config_path = Path(config_path).resolve()
 
-        with open(self.config_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
+        global_raw = _load_global_config()
 
-        raw = _resolve_deep(raw)
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            env_raw = yaml.safe_load(f) or {}
+        env_raw = _resolve_deep(env_raw)
+
+        # Merge global into env — only settings, aliases, safety are merged
+        # servers, tasks, logs, proxy are env-only
+        raw = _deep_merge(global_raw, env_raw)
 
         self._load(raw)
 
@@ -370,6 +541,11 @@ class AppConfig:
         ]
         self.tasks = [TaskConfig(t) for t in raw.get("tasks", [])]
 
+        # Log sources for remote log analysis
+        self.log_sources = [
+            LogSourceConfig(ls) for ls in raw.get("logs", [])
+        ]
+
         # Command aliases: short name -> full command
         self.aliases: dict[str, str] = {}
         for name, cmd in raw.get("aliases", {}).items():
@@ -385,6 +561,35 @@ class AppConfig:
         self.web_port = settings.get("web_port", 8080)
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Safety features
+        safety = raw.get("safety", {})
+
+        # Server warning patterns (fnmatch glob style)
+        self.server_warn_patterns: list[ServerWarnPattern] = []
+        for entry in safety.get("server_warn_patterns", []):
+            pat = entry.get("pattern", "")
+            if pat:
+                self.server_warn_patterns.append(ServerWarnPattern(
+                    pattern=pat,
+                    label=entry.get("label", "WARN"),
+                    color=entry.get("color", "#dc2626"),
+                ))
+
+        # Auto-backup config
+        ab = safety.get("auto_backup", {})
+        self.auto_backup = AutoBackupConfig(
+            enabled=ab.get("enabled", False),
+            backup_dir=ab.get("backup_dir", "/opt/backup"),
+            commands=ab.get("commands", ["rm", "mv", ">"]),
+        )
+
+        # Destination existence check config
+        dc = safety.get("dest_check", {})
+        self.dest_check = DestCheckConfig(
+            enabled=dc.get("enabled", False),
+            commands=dc.get("commands", ["cp", "mv", ">"]),
+        )
 
     @staticmethod
     def _validate_raw(raw: dict):
@@ -405,6 +610,38 @@ class AppConfig:
         for i, t in enumerate(raw.get("tasks", [])):
             if not isinstance(t, dict):
                 raise ValueError(f"tasks[{i}]: must be a mapping")
+
+    def get_server_warn(self, name: str, host: str = "") -> dict | None:
+        """Return warning info if server name or host matches any warn pattern.
+
+        Uses fnmatch glob matching (case-insensitive).
+        """
+        from fnmatch import fnmatch
+        name_lower = name.lower()
+        host_lower = host.lower() if host else ""
+        for p in self.server_warn_patterns:
+            pat = p.pattern.lower()
+            if fnmatch(name_lower, pat) or (host_lower and fnmatch(host_lower, pat)):
+                return {"label": p.label, "color": p.color}
+        return None
+
+    def get_safety_settings(self) -> dict:
+        """Return current safety settings for the frontend."""
+        return {
+            "server_warn_patterns": [
+                {"pattern": p.pattern, "label": p.label, "color": p.color}
+                for p in self.server_warn_patterns
+            ],
+            "auto_backup": {
+                "enabled": self.auto_backup.enabled,
+                "backup_dir": self.auto_backup.backup_dir,
+                "commands": self.auto_backup.commands,
+            },
+            "dest_check": {
+                "enabled": self.dest_check.enabled,
+                "commands": self.dest_check.commands,
+            },
+        }
 
     def get_server(self, name: str) -> ServerConfig | None:
         for s in self.servers:
@@ -431,10 +668,12 @@ class AppConfig:
         return self.servers
 
     def reload(self):
-        """Re-read config file and update all attributes in place."""
+        """Re-read global + env config files and update all attributes in place."""
+        global_raw = _load_global_config()
         with open(self.config_path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
-        raw = _resolve_deep(raw)
+            env_raw = yaml.safe_load(f) or {}
+        env_raw = _resolve_deep(env_raw)
+        raw = _deep_merge(global_raw, env_raw)
         self._load(raw)
 
     def switch_config(self, config_path: str | Path):

@@ -520,8 +520,8 @@ class TestRunCommandSuccess:
         assert data.get("status") == "started"
 
     def test_run_command_dedup_history(self, mock_client):
-        mock_client.post("/api/run-command", json={"servers": ["web1"], "command": "whoami"})
-        mock_client.post("/api/run-command", json={"servers": ["web1"], "command": "whoami"})
+        mock_client.post("/api/run-command", json={"servers": ["web1"], "command": "whoami", "history": "whoami"})
+        mock_client.post("/api/run-command", json={"servers": ["web1"], "command": "whoami", "history": "whoami"})
         resp = mock_client.get("/api/cmd-history")
         history = resp.json()
         assert history.count("whoami") == 1

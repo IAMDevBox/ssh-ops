@@ -1,0 +1,81 @@
+patterns:
+  - match: "no handler to dispatch to"
+    level: error
+    category: routing
+    description: No route matched the request — request fell through all conditions
+    suggestion: Check route condition expressions and request path patterns
+
+  - match: "not found in the heap"
+    level: error
+    category: config
+    description: Referenced heap object does not exist
+    suggestion: Verify heap object names match references in route config
+
+  - match: "ClosedChannelException"
+    level: error
+    category: backend
+    description: Backend connection was closed unexpectedly
+    suggestion: Check baseURI, backend health, and connection pool settings
+
+  - match: "Connection error"
+    level: error
+    category: backend
+    description: Failed to connect to backend service
+    suggestion: Verify baseURI is correct and backend is reachable
+
+  - match: "SocketTimeoutException"
+    level: error
+    category: backend
+    description: Backend response timed out
+    suggestion: Increase soTimeout in ClientHandler config or investigate backend performance
+
+  - match: "Error while starting"
+    level: error
+    category: startup
+    description: Route failed to start
+    suggestion: Check route JSON syntax, heap references, and filter/handler types
+
+  - match: "URI Too Long"
+    level: warning
+    category: request
+    description: Request URI exceeds server limit
+    suggestion: Check for redirect loops or excessive query parameters
+
+  - match: "SSLHandshakeException"
+    level: error
+    category: tls
+    description: TLS handshake failed with backend
+    suggestion: Check certificate validity, truststore config, and TLS protocol versions
+
+  - match: "ConnectTimeoutException"
+    level: error
+    category: backend
+    description: Connection to backend timed out before establishing
+    suggestion: Check network connectivity to backend and increase connection timeout
+
+  - match: "invalid_grant"
+    level: error
+    category: oauth
+    description: OAuth2 grant validation failed
+    suggestion: Check token expiry, refresh token validity, and OAuth2 client config
+
+  - match: "401"
+    regex: true
+    level: warning
+    category: auth
+    description: HTTP 401 Unauthorized response
+    suggestion: Check authentication credentials and token validity
+
+  - match: "502"
+    regex: true
+    level: error
+    category: backend
+    description: HTTP 502 Bad Gateway — backend returned invalid response
+    suggestion: Check backend health, timeout settings, and response format
+
+  - match: "503"
+    regex: true
+    level: warning
+    category: backend
+    description: HTTP 503 Service Unavailable
+    suggestion: Backend may be overloaded or in maintenance — check backend status

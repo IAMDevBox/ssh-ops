@@ -3,20 +3,20 @@ services:
     image: ssh-test-node
     build: .
     container_name: ssh-test-node1
-    hostname: node1
+    hostname: dev-node1
     ports:
       - "2201:22"
 
   ssh-node2:
     image: ssh-test-node
     container_name: ssh-test-node2
-    hostname: node2
+    hostname: dev-node2
     ports:
       - "2202:22"
 
-  ssh-node3:
+  ssh-prod1:
     image: ssh-test-node
-    container_name: ssh-test-node3
-    hostname: node3
+    container_name: ssh-test-prod1
+    hostname: prod-app1
     ports:
       - "2203:22"

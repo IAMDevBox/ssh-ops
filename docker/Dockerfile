@@ -16,10 +16,33 @@ RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/
     && echo 'ClientAliveCountMax 3' >> /etc/ssh/sshd_config
 
 # Add some test files and scripts
-RUN mkdir -p /opt/app /var/data \
+RUN mkdir -p /opt/app /var/data /opt/backup /tmp/testdir \
+    && chmod 777 /opt/backup \
     && printf '#!/bin/bash\necho "App v1.0 running on $(hostname)"\n' > /opt/app/status.sh \
     && chmod +x /opt/app/status.sh \
-    && printf 'sample data line 1\nsample data line 2\nsample data line 3\n' > /var/data/test.txt
+    && printf 'sample data line 1\nsample data line 2\nsample data line 3\n' > /var/data/test.txt \
+    && printf 'config_value=production\n' > /tmp/testdir/app.conf \
+    && printf 'old data\n' > /tmp/testdir/overwrite-me.txt
+
+# --- Sample log files for log analyzer testing ---
+RUN mkdir -p /opt/ig/logs /opt/am/debug /opt/ds/logs /opt/idm/logs
+
+# PingGateway (IG) log — pipe-delimited format with routeId
+COPY test-logs/ig-route.log /opt/ig/logs/route-system.log
+
+# PingAM log — JSON format
+COPY test-logs/am-debug.log /opt/am/debug/amAuthentication
+
+# PingDS log — category/severity/msgID format
+COPY test-logs/ds-errors.log /opt/ds/logs/errors
+
+# PingIDM log — JSON format (logback JsonEncoder)
+COPY test-logs/idm-openidm.log /opt/idm/logs/openidm0.log
+
+# Generic syslog-style log
+COPY test-logs/generic-app.log /var/log/app.log
+
+RUN chmod -R 644 /opt/ig/logs/* /opt/am/debug/* /opt/ds/logs/* /opt/idm/logs/* /var/log/app.log
 
 EXPOSE 22
 

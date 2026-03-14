@@ -1,0 +1,90 @@
+patterns:
+  - match: "Disk space low"
+    level: error
+    category: disk
+    description: Disk space below threshold
+    suggestion: Free up disk space — clean logs, compact database, or expand volume
+
+  - match: "disk threshold"
+    level: warning
+    category: disk
+    description: Disk usage approaching threshold
+    suggestion: Monitor disk usage and plan capacity increase
+
+  - match: "Replication.*conflict"
+    regex: true
+    level: warning
+    category: replication
+    description: Replication conflict detected between replicas
+    suggestion: Check multi-master write patterns and conflict resolution strategy
+
+  - match: "SSL handshake failed"
+    level: error
+    category: tls
+    description: TLS handshake failure (possibly replication)
+    suggestion: Check replication certificates, admin connector, and truststore
+
+  - match: "ACI.*parsing"
+    regex: true
+    level: error
+    category: access_control
+    description: ACI (Access Control Instruction) syntax error
+    suggestion: Check aci attribute values for proper syntax
+
+  - match: "Schema.*violation"
+    regex: true
+    level: error
+    category: schema
+    description: Schema constraint violation
+    suggestion: Check objectClass, required attributes, and attribute syntax
+
+  - match: "Connection from.*rejected"
+    regex: true
+    level: warning
+    category: protocol
+    description: Incoming connection was rejected
+    suggestion: Check connection handler config, ACLs, and max connections
+
+  - match: "Backend.*corrupt"
+    regex: true
+    level: error
+    category: backend
+    description: Database backend corruption detected
+    suggestion: Run rebuild-index or restore from backup immediately
+
+  - match: "index"
+    level: warning
+    category: backend
+    description: Index-related issue
+    suggestion: Consider running rebuild-index or verify-index
+
+  - match: "Out of memory"
+    level: error
+    category: jvm
+    description: JVM out of memory
+    suggestion: Increase heap size (-Xmx) or investigate memory usage patterns
+
+  - match: "Replication.*timeout"
+    regex: true
+    level: warning
+    category: replication
+    description: Replication operation timed out
+    suggestion: Check network latency between replicas and replication heartbeat settings
+
+  - match: "changelog"
+    level: warning
+    category: replication
+    description: Replication changelog issue
+    suggestion: Check changelog database health and disk space
+
+  - match: "Unable to bind"
+    level: error
+    category: protocol
+    description: LDAP bind (authentication) failed
+    suggestion: Check bind DN and password, account status, and password policy
+
+  - match: "Connection closed"
+    level: warning
+    category: protocol
+    description: Client connection was closed
+    suggestion: Check client timeout settings, idle connection cleanup, and network stability

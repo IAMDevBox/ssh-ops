@@ -29,19 +29,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _docker_server(name="node1", port=2201):
+def _docker_server(name="dev-node1", port=2201):
     return ServerConfig({
         "host": "127.0.0.1", "port": port,
-        "name": name, "username": "testuser", "password": "test123",
+        "name": name, "username": "admin", "password": "admin123",
     })
 
 
 @pytest.fixture
 def docker_servers():
     return [
-        _docker_server("node1", 2201),
-        _docker_server("node2", 2202),
-        _docker_server("node3", 2203),
+        _docker_server("dev-node1", 2201),
+        _docker_server("dev-node2", 2202),
+        _docker_server("prod-app1", 2203),
     ]
 
 
@@ -162,7 +162,7 @@ class TestConnectionPoolReal:
         for s in docker_servers:
             assert pool.get_session(s.name) is not None
             assert pool.get_session(s.name).is_alive()
-        pool.disconnect("node2")
+        pool.disconnect("dev-node2")
         assert len(pool.connected_servers()) == 2
         pool.disconnect_all()
         assert len(pool.connected_servers()) == 0
@@ -202,7 +202,7 @@ class TestTaskExecutorReal:
         result = executor.run_task(docker_servers[0], task)
         assert result is True
         # Verify
-        session = pool.get_session("node1")
+        session = pool.get_session("dev-node1")
         lines, _ = _exhaust_generator(session.exec_command("cat /tmp/_ssh_ops_task_upload.txt"))
         assert any("task upload test" in l for l in lines)
         _exhaust_generator(session.exec_command("rm -f /tmp/_ssh_ops_task_upload.txt"))
@@ -283,9 +283,9 @@ class TestCLIDryRunDocker:
             main()
         out = capsys.readouterr().out
         assert "DRY RUN PREVIEW" in out
-        assert "node1" in out
-        assert "node2" in out
-        assert "node3" in out
+        assert "dev-node1" in out
+        assert "dev-node2" in out
+        assert "prod-app1" in out
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +301,7 @@ class TestWebAPIDryRunDocker:
         logger = ExecLogger(Path("./logs"))
         app = create_app(config, logger)
         c = TestClient(app)
-        resp = c.post("/api/dry-run", json={"servers": ["node1", "node2", "node3"]})
+        resp = c.post("/api/dry-run", json={"servers": ["dev-node1", "dev-node2", "prod-app1"]})
         data = resp.json()
         assert len(data["servers"]) == 3
         assert len(data["tasks"]) == len(config.tasks)

@@ -19,9 +19,9 @@ done
 
 echo ""
 echo "Test nodes:"
-echo "  node1  127.0.0.1:2201  testuser/test123"
-echo "  node2  127.0.0.1:2202  testuser/test123"
-echo "  node3  127.0.0.1:2203  admin/admin123 (sudo)"
+echo "  dev-node1   127.0.0.1:2201  admin/admin123 (sudo)"
+echo "  dev-node2   127.0.0.1:2202  admin/admin123 (sudo)"
+echo "  prod-app1   127.0.0.1:2203  admin/admin123 (sudo) [PROD warning]"
 echo ""
 echo "Config: config/docker-test.yml"
 echo "Stop:   docker/stop.sh"

@@ -45,6 +45,8 @@
   .config-menu-item:hover { background: #f0f0f0; }
   .config-menu-item.danger { color: #dc2626; }
   .config-menu-item.danger:hover { background: #fef2f2; }
+  .config-menu-sep { height: 1px; background: #e5e5e5; margin: 4px 10px; }
+  .config-menu-label { font-size: 9px; color: #999; padding: 5px 14px 2px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
   .status { font-size: 12px; color: #16a34a; white-space: nowrap; }
   .main { display: flex; flex: 1; overflow: hidden; }
 
@@ -56,6 +58,10 @@
 
   .server-item, .task-item { display: flex; align-items: center; padding: 5px 8px; border-radius: 3px; cursor: pointer; font-size: 13px; margin: 2px 0; overflow: hidden; }
   .server-item:hover, .task-item:hover { background: #e8e8e8; }
+  .server-item { border-left: 3px solid transparent; position: relative; }
+  .server-item.warn { border-left-color: var(--warn-color, #dc2626); background: var(--warn-bg, #fef2f2); }
+  .server-item.warn:hover { background: var(--warn-bg-hover, #fee2e2); }
+  .server-item.warn .server-label { color: var(--warn-color, #dc2626); font-weight: bold; }
   .server-item input { margin-right: 8px; flex-shrink: 0; }
   .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #bbb; display: inline-block; flex-shrink: 0; }
   .dot.connected { background: #16a34a; }
@@ -124,7 +130,26 @@
   .tab-panel.active { display: block; }
   .tab-panel .line { white-space: pre-wrap; word-break: break-all; }
   .tab-panel .cmd-input { background: #eef2ff; border-left: 3px solid #2563eb; padding: 4px 10px; margin: 8px 0 0 0; font-weight: bold; color: #1e40af; }
+  .tab-panel .cmd-input.cmd-warn { background: #fef2f2; border-left-color: #dc2626; color: #991b1b; }
   .tab-panel .output-block { background: #f8f8f8; border-left: 3px solid #d1d5db; padding: 6px 10px; margin: 0 0 4px 0; position: relative; white-space: pre-wrap; word-break: break-all; }
+  .tab-panel .output-block.out-warn { background: #fef8f8; border-left-color: #fca5a5; }
+
+  /* Warn styling: log tabs */
+  .tab.tab-warn { color: #dc2626 !important; }
+  .tab.tab-warn::before { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: #dc2626; }
+  .tab.tab-warn.active { border-bottom-color: #dc2626 !important; }
+  .log-panel.log-warn { background: #fef8f8; border-top: 2px solid #dc2626; }
+
+  /* Warn styling: file editor panes */
+  .fe-pane-header.fe-warn { background: #4a1a1a !important; border-bottom-color: #dc2626 !important; }
+  .fe-pane-header.fe-warn .fe-pane-server { color: #fca5a5 !important; }
+  .fe-pane-header.fe-warn .fe-warn-badge { display: inline-block; font-size: 8px; padding: 1px 4px; border-radius: 2px; color: #fff; font-weight: bold; letter-spacing: 0.5px; margin-left: 4px; }
+
+  /* Warn styling: compare columns */
+  .compare-col.cmp-warn { border-top: 3px solid #dc2626; }
+  .compare-col.cmp-warn .compare-col-header { background: #fef2f2 !important; color: #991b1b !important; }
+  .compare-col.cmp-warn .compare-col-header .cmp-warn-badge { display: inline-block; font-size: 8px; padding: 1px 4px; border-radius: 2px; color: #fff; font-weight: bold; letter-spacing: 0.5px; margin-left: 4px; }
+
   .tab-panel .output-block .copy-out { position: absolute; right: 4px; top: 4px; display: none; padding: 0 6px; font-size: 10px; color: #888; background: #fff; border: 1px solid #ccc; border-radius: 2px; cursor: pointer; line-height: 1.6; z-index: 1; }
   .tab-panel .output-block .copy-out.bottom { top: auto; bottom: 4px; }
   .tab-panel .output-block:hover .copy-out { display: inline-block; }
@@ -135,6 +160,7 @@
   .tab-panel .success { color: #16a34a; }
   .tab-panel .warn { color: #d97706; }
   .server-prefix { font-weight: bold; }
+  .server-prefix.prefix-warn { background: var(--pw-color, #dc2626); color: #fff; border-radius: 2px; padding: 0 3px; margin-right: 2px; }
   .tab-panel.log-panel { font-size: 12px; white-space: pre-wrap; }
 
   .adhoc-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; white-space: nowrap; cursor: pointer; user-select: none; }
@@ -215,13 +241,13 @@
   .modal-overlay.show { display: flex; }
   .modal { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 20px; min-width: 360px; max-width: 800px; width: 50vw; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
   .modal.narrow { width: auto; min-width: 280px; max-width: 400px; }
-  .modal.wide { max-width: 95vw; width: 85vw; height: 85vh; padding: 12px 16px; display: flex; flex-direction: column; }
+  .modal.wide { max-width: 95vw; width: 85vw; height: 70vh; padding: 12px 16px; display: flex; flex-direction: column; }
   .modal.wide .modal-title { margin-bottom: 6px; }
   .modal.wide .modal-body { flex: 1; overflow: hidden; margin-bottom: 8px; display: flex; flex-direction: column; }
   .modal.wide .modal-actions { margin-top: 0; }
   .modal-body pre { background: #f8f8f8; border: 1px solid #e0e0e0; border-radius: 4px; padding: 12px; font-family: Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.6; overflow: auto; max-height: 75vh; white-space: pre; tab-size: 2; }
   .modal-title { font-size: 14px; color: #2563eb; margin-bottom: 12px; }
-  .modal-body { font-size: 13px; color: #333; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap; word-break: break-all; }
+  .modal-body { font-size: 13px; color: #333; line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap; word-break: break-all; max-height: 65vh; overflow-y: auto; }
   .modal-body code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; color: #92700a; font-family: Consolas, monospace; font-size: 12px; }
   .modal-input { width: 100%; padding: 6px 10px; background: #fff; border: 1px solid #bbb; color: #333; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; margin-bottom: 16px; }
   .modal-input::placeholder { color: #ccc; }
@@ -234,6 +260,17 @@
   .modal-btn.primary:hover { background: #2563eb; color: #fff; }
   .modal-btn.danger { border-color: #dc2626; color: #dc2626; }
   .modal-btn.danger:hover { background: #dc2626; color: #fff; }
+
+  /* Sidebar tabs (Tasks / Log Analyzer) */
+  .sidebar-tabs { display: flex; gap: 0; margin: 10px 0 6px; border-bottom: 1px solid #ddd; }
+  .sidebar-tab { font-size: 11px; color: #888; text-transform: uppercase; padding: 4px 8px; cursor: pointer; border-bottom: 2px solid transparent; }
+  .sidebar-tab:hover { color: #333; }
+  .sidebar-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+  #sidebarPane-logs label.lp-label { font-size: 11px; color: #888; display: block; margin-bottom: 2px; }
+  #sidebarPane-logs .lp-field { margin-bottom: 8px; }
+  #sidebarPane-logs select, #sidebarPane-logs input[type="text"], #sidebarPane-logs input[type="number"] { width: 100%; padding: 4px 6px; border: 1px solid #ddd; border-radius: 3px; font-size: 12px; box-sizing: border-box; }
+  #sidebarPane-logs select:focus, #sidebarPane-logs input:focus { outline: none; border-color: #2563eb; }
+  #sidebarPane-logs input::placeholder { color: #ccc; }
 
   .file-count { font-size: 11px; color: #888; white-space: nowrap; }
   .modal-error { font-size: 11px; color: #dc2626; margin-top: -8px; margin-bottom: 8px; display: none; }
@@ -322,18 +359,24 @@
       <div class="config-menu-wrap">
         <button class="config-menu-btn" onclick="toggleConfigMenu(event)" title="Config actions">&#8942;</button>
         <div class="config-menu" id="configMenu">
+          <div class="config-menu-label">Environment</div>
           <button class="config-menu-item" onclick="reloadConfig();closeConfigMenu()"><span class="mi">&#x21bb;</span>Reload</button>
           <button class="config-menu-item" onclick="newConfigModal();closeConfigMenu()"><span class="mi">+</span>New</button>
           <button class="config-menu-item" onclick="duplicateConfigModal();closeConfigMenu()"><span class="mi">&#x2398;</span>Duplicate</button>
           <button class="config-menu-item" onclick="renameConfigModal();closeConfigMenu()"><span class="mi">&#x270e;</span>Rename</button>
           <button class="config-menu-item" onclick="editConfigYaml();closeConfigMenu()"><span class="mi">&#x270e;</span>Edit YAML</button>
           <button class="config-menu-item" onclick="downloadConfig();closeConfigMenu()"><span class="mi">&#x2913;</span>Download</button>
-          <button class="config-menu-item" onclick="showPlugins();closeConfigMenu()"><span class="mi">&#x2699;</span>Validation Plugins</button>
           <button class="config-menu-item danger" onclick="deleteConfigModal();closeConfigMenu()"><span class="mi">&#x2716;</span>Delete</button>
+          <div class="config-menu-sep"></div>
+          <div class="config-menu-label">Global</div>
+          <button class="config-menu-item" onclick="editGlobalConfig();closeConfigMenu()"><span class="mi">&#x270e;</span>Edit Global Config</button>
+          <button class="config-menu-item" onclick="showSafetySettings();closeConfigMenu()"><span class="mi">&#x1f6e1;</span>Safety Settings</button>
+          <button class="config-menu-item" onclick="showPlugins();closeConfigMenu()"><span class="mi">&#x2699;</span>Validation Plugins</button>
         </div>
       </div>
     </div>
     <span class="status" id="wsStatus">Connecting...</span>
+    <span id="clientIdTag" style="font-size:10px;color:#aaa;margin-left:6px" title="Tab ID for output sync"></span>
   </div>
 </header>
 
@@ -341,12 +384,14 @@
   <div class="panel">
     <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
       <span>Servers <span class="section-count" id="serverCount"></span></span>
-      <div class="config-menu-wrap">
-        <button class="config-menu-btn" onclick="toggleServerMenu(event)" title="More actions">&#8942;</button>
-        <div class="config-menu" id="serverMenu">
-          <button class="config-menu-item" onclick="addServerModal();closeServerMenu()"><span class="mi">+</span>Add Server</button>
-          <button class="config-menu-item" onclick="proxySettingsModal();closeServerMenu()"><span class="mi">&#x1f512;</span>Proxy (PSMP)</button>
-          <button class="config-menu-item" onclick="copyHosts();closeServerMenu()"><span class="mi">&#x2398;</span>Copy Selected Hosts</button>
+      <div style="display:flex;align-items:center;gap:4px">
+        <div class="config-menu-wrap">
+          <button class="config-menu-btn" onclick="toggleServerMenu(event)" title="More actions">&#8942;</button>
+          <div class="config-menu" id="serverMenu">
+            <button class="config-menu-item" onclick="addServerModal();closeServerMenu()"><span class="mi">+</span>Add Server</button>
+            <button class="config-menu-item" onclick="proxySettingsModal();closeServerMenu()"><span class="mi">&#x1f512;</span>Proxy (PSMP)</button>
+            <button class="config-menu-item" onclick="copyHosts();closeServerMenu()"><span class="mi">&#x2398;</span>Copy Selected Hosts</button>
+          </div>
         </div>
       </div>
     </div>
@@ -358,26 +403,40 @@
     <input type="text" class="filter-input" id="serverFilter" placeholder="Filter servers..." oninput="filterServers()" style="display:none">
     <div id="serverList" class="list-scroll"></div>
 
-    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
-      <span>Tasks <span class="section-count" id="taskCount"></span></span>
-      <div class="config-menu-wrap">
-        <button class="config-menu-btn" onclick="toggleTaskMenu(event)" title="More actions">&#8942;</button>
-        <div class="config-menu" id="taskMenu">
-          <button class="config-menu-item" onclick="addTaskModal();closeTaskMenu()"><span class="mi">+</span>Add Task</button>
+    <div class="sidebar-tabs" style="display:flex;align-items:center">
+      <div class="sidebar-tab active" data-stab="tasks" onclick="switchSidebarTab('tasks')">Tasks <span class="section-count" id="taskCount"></span></div>
+      <div class="sidebar-tab" data-stab="logs" onclick="switchSidebarTab('logs')">Log Analyzer</div>
+      <div style="margin-left:auto" id="taskMenuWrap">
+        <div class="config-menu-wrap">
+          <button class="config-menu-btn" onclick="toggleTaskMenu(event)" title="More actions">&#8942;</button>
+          <div class="config-menu" id="taskMenu">
+            <button class="config-menu-item" onclick="addTaskModal();closeTaskMenu()"><span class="mi">+</span>Add Task</button>
+          </div>
         </div>
       </div>
     </div>
-    <div class="btn-row">
-      <button class="btn primary" id="btnRun" onclick="runSelectedTasks()">&#x25b6; Run</button>
-      <button class="btn danger" id="btnCancel" onclick="cancelTasks()" style="display:none">&#x25a0; Cancel</button>
-      <button class="btn" onclick="toggleAllTasks()">&#x2611; Select All</button>
-      <button class="btn" onclick="viewTasksYaml()">{ } YAML</button>
-      <button class="btn" id="btnToggleProgress" onclick="toggleProgress(this)" title="Toggle progress display" style="font-size:11px;padding:2px 7px">P &#x2713;</button>
+
+    <div id="sidebarPane-tasks">
+      <div class="btn-row">
+        <button class="btn primary" id="btnRun" onclick="runSelectedTasks()">&#x25b6; Run</button>
+        <button class="btn danger" id="btnCancel" onclick="cancelTasks()" style="display:none">&#x25a0; Cancel</button>
+        <button class="btn" onclick="toggleAllTasks()">&#x2611; Select All</button>
+        <button class="btn" onclick="viewTasksYaml()">{ } YAML</button>
+        <button class="btn" id="btnToggleProgress" onclick="toggleProgress(this)" title="Toggle progress display" style="font-size:11px;padding:2px 7px">P &#x2713;</button>
+      </div>
+      <div id="taskList"></div>
+      <div class="task-progress" id="taskProgress">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <span class="progress-text" id="progressText"></span>
+      </div>
     </div>
-    <div id="taskList"></div>
-    <div class="task-progress" id="taskProgress">
-      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-      <span class="progress-text" id="progressText"></span>
+
+    <div id="sidebarPane-logs" style="display:none">
+      <div id="logPanelBody"></div>
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+        <a href="#" onclick="manageLogSources();return false" style="font-size:11px;color:#2563eb;margin-right:auto">Manage sources</a>
+        <button class="btn primary" onclick="runLogAnalysis()">&#x25b6; Analyze</button>
+      </div>
     </div>
   </div>
   <div class="divider" id="divider"></div>
@@ -398,7 +457,7 @@
     <div class="cwd-bar" id="cwdBar" style="display:none">
       <span class="cwd-label">cwd</span>
       <span id="cwdBreadcrumb"></span>
-      <span class="cwd-home" onclick="_cwdReset()" title="Reset to /">&#x2302;</span>
+      <span class="cwd-home" onclick="_cwdGoHome()" title="Go to home directory">&#x2302;</span>
       <span class="cwd-sync" onclick="_cwdSync()" title="Sync from server (pwd)">&#x21bb; sync</span>
     </div>
     <div class="actions locked" id="actionsPanel">
@@ -488,7 +547,7 @@
   <button class="fp-menu-item fp-file-only" onclick="_fpAction('copy')"><span class="fp-icon">&#x2398;</span>Copy file content</button>
   <button class="fp-menu-item fp-file-only" onclick="_fpAction('edit')"><span class="fp-icon">&#x270e;</span>Open in editor</button>
   <button class="fp-menu-item fp-file-only" onclick="_fpAction('editAll')"><span class="fp-icon">&#x270e;</span>Open on all servers</button>
-  <button class="fp-menu-item fp-dir-only" onclick="_fpAction('openDir')"><span class="fp-icon">&#x25B6;</span>Open directory (ls -ltr)</button>
+  <button class="fp-menu-item fp-dir-only" onclick="_fpAction('openDir')"><span class="fp-icon">&#x25B6;</span>Open directory</button>
   <button class="fp-menu-item fp-dir-only" onclick="_fpAction('parentDir')"><span class="fp-icon">&#x25B2;</span>Go to parent directory</button>
   <button class="fp-menu-item fp-file-only" onclick="_fpAction('download')"><span class="fp-icon">&#x2913;</span>Download</button>
   <button class="fp-menu-item fp-file-only danger" onclick="_fpAction('delete')"><span class="fp-icon">&#x2716;</span>Delete</button>
@@ -872,7 +931,10 @@ function openLogTab(serverName) {
   }
   var tab = document.createElement('div');
   tab.className = 'tab';
+  tab.style.position = 'relative';
   tab.dataset.tab = tabId;
+  var warn = _getServerWarn(serverName);
+  if (warn) tab.classList.add('tab-warn');
   var label = document.createTextNode(serverName);
   tab.appendChild(label);
   tab.addEventListener('click', function() { switchTab(tabId); });
@@ -887,7 +949,7 @@ function openLogTab(serverName) {
   document.getElementById('tabBar').appendChild(tab);
 
   var panel = document.createElement('div');
-  panel.className = 'tab-panel log-panel';
+  panel.className = 'tab-panel log-panel' + (warn ? ' log-warn' : '');
   panel.id = 'panel-' + tabId;
   document.getElementById('tabPanels').appendChild(panel);
 
@@ -1071,10 +1133,10 @@ function _lineText(line) {
 var _currentOutputBlock = null;
 
 function _classifyLine(text) {
-  if (text.includes('[ERROR]') || text.includes('FAILED') || /^✗/.test(text)) return 'error';
+  if (text.includes('[ERROR]') || text.includes('FAILED') || /^✗/.test(text) || text.includes('[STDERR]')) return 'error';
   if (text.includes('[WARN]')) return 'warn';
   if (/^✓/.test(text)) return 'success';
-  if (text.startsWith('──') || /^\[[^\]]+\]\s*\$\s/.test(text)) return 'cmd-input';
+  if (text.startsWith('──') || /^\[[^\]]+\]\s*\$\s/.test(text) || /^[═]{3,}/.test(text)) return 'cmd-input';
   if (text.startsWith('[Schedule]') || text.startsWith('[Done]')) return 'info';
   // Only lines with [servername] prefix (and not $ commands) are output
   if (/^\[[^\]]+\]\s/.test(text) && !text.includes('[ERROR]') && !text.includes('[WARN]')) return 'output';
@@ -1114,12 +1176,30 @@ function _closeOutputBlock() {
   _currentOutputBlock = null;
 }
 
+// Look up warn info for a server by name — returns {label, color} or null
+function _getServerWarn(name) {
+  for (var i = 0; i < _serverData.length; i++) {
+    if (_serverData[i].name === name && _serverData[i].warn) return _serverData[i].warn;
+  }
+  return null;
+}
+
+function _isWarnServer(text) {
+  // Extract server name from header "── [name] $" or output "[name] ..."
+  var m = text.match(/\[([^\]]+)\]/);
+  if (!m) return false;
+  return !!_getServerWarn(m[1]);
+}
+
+var _currentOutputWarn = false;
+
 function appendLine(text) {
   var panel = document.getElementById('panel-main');
   var cls = _classifyLine(text);
 
   // Track directory context from command headers for ls filename linkification
   if (cls === 'cmd-input') {
+    _currentOutputWarn = _isWarnServer(text);
     var dir = _extractDirFromCmd(text);
     if (dir) _fpLastDir = dir;
     else _fpLastDir = _cwd || '';
@@ -1136,7 +1216,7 @@ function appendLine(text) {
     // Start new output block if needed
     if (!_currentOutputBlock) {
       _currentOutputBlock = document.createElement('div');
-      _currentOutputBlock.className = 'line output-block';
+      _currentOutputBlock.className = 'line output-block' + (_currentOutputWarn ? ' out-warn' : '');
       _currentOutputBlock.appendChild(_makeCopyBtn());
       panel.appendChild(_currentOutputBlock);
     }
@@ -1158,7 +1238,7 @@ function appendLine(text) {
     }
   } else {
     var div = document.createElement('div');
-    div.className = 'line ' + cls;
+    div.className = 'line ' + cls + (cls === 'cmd-input' && _currentOutputWarn ? ' cmd-warn' : '');
     _buildLineContent(div, text);
     panel.appendChild(div);
   }
@@ -1177,6 +1257,11 @@ function _buildLineContent(div, text) {
     var prefix = document.createElement('span');
     prefix.className = 'server-prefix';
     prefix.textContent = '[' + serverName + '] ';
+    var outWarn = _getServerWarn(serverName);
+    if (outWarn) {
+      prefix.classList.add('prefix-warn');
+      prefix.style.setProperty('--pw-color', outWarn.color);
+    }
     div.appendChild(prefix);
     var ansiFrag = ansiToHtml(rest);
     if (ansiFrag) { div.appendChild(ansiFrag); _linkifyPaths(div); }
@@ -1262,10 +1347,24 @@ function _setBackendAlive(alive) {
 }
 
 // --- WebSocket ---
+// Stable per-tab ID: survives refresh, but duplicated tabs get a new one
+var _clientId = sessionStorage.getItem('clientId');
+if (!_clientId || sessionStorage.getItem('clientIdUsed')) {
+  _clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  sessionStorage.setItem('clientId', _clientId);
+}
+sessionStorage.setItem('clientIdUsed', '1');
+window.addEventListener('beforeunload', function() { sessionStorage.removeItem('clientIdUsed'); });
+var _syncOutput = localStorage.getItem('syncOutput') !== '0';
+(function() { var t = document.getElementById('clientIdTag'); if (t) t.textContent = '#' + _clientId.slice(0, 6); })();
+
 function connectWS() {
   var proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(proto + '://' + location.host + '/ws');
-  ws.onopen = function() { _setBackendAlive(true); };
+  ws.onopen = function() {
+    _setBackendAlive(true);
+    ws.send(JSON.stringify({ type: 'register', client_id: _clientId }));
+  };
   ws.onclose = function() {
     _setBackendAlive(false);
     setTimeout(connectWS, 3000);
@@ -1275,8 +1374,15 @@ function connectWS() {
     if (d.charAt(0) === '{') {
       try {
         var msg = JSON.parse(d);
+        // System messages — always deliver regardless of sync
         if (msg.type === 'progress') { updateTaskProgress(msg); return; }
         if (msg.type === 'server_status') { _updateServerDots(msg.servers); return; }
+        // Text output — filter by source when sync is off
+        if (msg.type === 'output') {
+          if (!_syncOutput && msg.source && msg.source !== _clientId) return;
+          appendLine(msg.text);
+          return;
+        }
       } catch(_) {}
     }
     appendLine(d);
@@ -1379,6 +1485,7 @@ async function apiWithSftp(url, body) {
 
 async function api(url, body) {
   try {
+    if (body && typeof body === 'object') body.client_id = _clientId;
     var res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1506,10 +1613,21 @@ async function reloadConfig() {
 }
 
 // --- Load data ---
+var _serverData = [];
+var _safetySettings = { server_warn_patterns: [], auto_backup: { enabled: false }, dest_check: { enabled: false } };
+
+async function loadSafetySettings() {
+  try {
+    var res = await apiGet('/api/safety-settings');
+    if (res) _safetySettings = await res.json();
+  } catch(e) {}
+}
+
 async function loadServers() {
   var res = await apiGet('/api/servers');
   if (!res) return;
   var servers = await res.json();
+  _serverData = servers;
   var list = document.getElementById('serverList');
   list.textContent = '';
   // Update count badge
@@ -1546,6 +1664,14 @@ async function loadServers() {
       else div.title = 'Double-click to change password';
       label.addEventListener('dblclick', function(e) { e.stopPropagation(); editServerPassword(idx, s.name); });
     }
+    // Server warning — red border + background + red label text, tooltip shows warn label
+    if (s.warn) {
+      div.classList.add('warn');
+      div.style.setProperty('--warn-color', s.warn.color);
+      div.style.setProperty('--warn-bg', '#fef2f2');
+      div.style.setProperty('--warn-bg-hover', '#fee2e2');
+      div.title = (div.title ? div.title + ' — ' : '') + '⚠ ' + s.warn.label;
+    }
 
     var logBtn = document.createElement('button');
     logBtn.className = 'log-btn';
@@ -1574,6 +1700,10 @@ async function loadServers() {
     mp.innerHTML = '<div class="mini-bar"><div class="mini-fill"></div></div><span class="mini-text"></span>';
     list.appendChild(mp);
   });
+  // Auto-sync cwd once when connected servers are available
+  if (!_cwd && servers.some(function(s) { return s.connected; })) {
+    _cwdSyncSilent();
+  }
 }
 
 function updateServerCount() {
@@ -2258,6 +2388,24 @@ function isModifyingCmd(cmd) {
   return false;
 }
 
+function _parseDestPath(cmd) {
+  var m;
+  // cp/mv [flags] src dest — dest is the last non-flag arg
+  if ((m = cmd.match(/\b(?:sudo\s+)?(?:cp|mv)\s+(?:-\S+\s+)*\S+\s+(\S+)\s*$/))) return m[1];
+  // cmd > file (redirect)
+  if ((m = cmd.match(/>\s*(\S+)/))) return m[1];
+  return null;
+}
+
+function _parseSrcBasename(cmd) {
+  // For cp/mv, extract source file basename (first non-flag arg after command)
+  var m = cmd.match(/\b(?:sudo\s+)?(?:cp|mv)\s+((?:-\S+\s+)*)(\S+)\s+\S+\s*$/);
+  if (!m) return '';
+  var src = m[2];
+  var i = src.lastIndexOf('/');
+  return i >= 0 ? src.substring(i + 1) : src;
+}
+
 function checkInteractiveCmd(cmd) {
   var base = cmd.trim().split(/\s+/)[0].replace(/^.*[\/\\]/, '');
   if (INTERACTIVE_CMDS.indexOf(base) >= 0) return "'" + base + "' is an interactive command and cannot be run via SSH Ops";
@@ -2436,7 +2584,11 @@ async function openFileEditor(serverNames, filePath) {
 
     var header = document.createElement('div');
     header.className = 'fe-pane-header';
+    var feWarn = _getServerWarn(name);
+    if (feWarn) header.classList.add('fe-warn');
+    var badgeHtml = feWarn ? '<span class="fe-warn-badge" style="background:' + feWarn.color + '">' + _escAttr(feWarn.label) + '</span>' : '';
     header.innerHTML = '<span class="fe-pane-server">' + _escAttr(name) + '</span>'
+      + badgeHtml
       + '<span class="fe-pane-mod">● modified</span>'
       + '<span style="flex:1"></span>'
       + '<button class="fe-btn save" data-server="' + _escAttr(name) + '" onclick="_feSavePane(this.dataset.server)">Save</button>';
@@ -3069,16 +3221,114 @@ async function runCommand() {
   var serverCmd = _cwdPrependCmd(cmd);
 
   if (isModifyingCmd(cmd)) {
+    // Build prod server warning banner if any selected servers are flagged
+    var warnBanner = '';
+    var warnNames = [];
+    for (var wi = 0; wi < _serverData.length; wi++) {
+      if (_serverData[wi].warn && names.indexOf(_serverData[wi].name) !== -1) {
+        warnNames.push(_serverData[wi].name);
+      }
+    }
+    if (warnNames.length) {
+      warnBanner = '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:4px;padding:6px 10px;margin-bottom:8px;color:#b91c1c;font-weight:bold;font-size:12px">'
+        + '\u26a0 PRODUCTION servers: ' + _escAttr(warnNames.join(', ')) + '</div>';
+    }
+    // Auto-backup info — detect glob wildcards that prevent backup
+    var backupNote = '';
+    if (_safetySettings.auto_backup && _safetySettings.auto_backup.enabled) {
+      var _abCmds = _safetySettings.auto_backup.commands || [];
+      var _cmdBase = cmd.trim().replace(/^sudo\s+/, '').split(/\s+/)[0];
+      var _hasGlob = false;
+      // Check if this is an auto-backup-eligible command with glob targets
+      if (_abCmds.indexOf(_cmdBase) >= 0 || (_abCmds.indexOf('>') >= 0 && cmd.indexOf('>') !== -1)) {
+        // Extract target args (skip flags)
+        var _parts = cmd.trim().split(/\s+/);
+        for (var _ai = 1; _ai < _parts.length; _ai++) {
+          if (_parts[_ai][0] === '-') continue;
+          if (/[*?\[]/.test(_parts[_ai])) { _hasGlob = true; break; }
+        }
+      }
+      // Check if target is inside backup directory (consider CWD for relative paths)
+      var _backupDir = (_safetySettings.auto_backup.backup_dir || '').replace(/\/+$/, '');
+      var _isInBackupDir = false;
+      if (_backupDir) {
+        var _cwdClean = (_cwd || '').replace(/\/+$/, '');
+        var _cwdInBackup = _cwdClean === _backupDir || _cwdClean.indexOf(_backupDir + '/') === 0;
+        var _parts2 = cmd.trim().replace(/^sudo\s+/, '').split(/\s+/);
+        for (var _bi = 1; _bi < _parts2.length; _bi++) {
+          if (_parts2[_bi][0] === '-') continue;
+          var _tp = _parts2[_bi].replace(/\/+$/, '');
+          // Absolute path: check directly
+          if (_tp.indexOf('/') === 0) {
+            if (_tp === _backupDir || _tp.indexOf(_backupDir + '/') === 0) { _isInBackupDir = true; break; }
+          } else if (_cwdInBackup) {
+            // Relative path + CWD inside backup dir
+            _isInBackupDir = true; break;
+          }
+        }
+      }
+      // Only show backup notes if this command is in the backup commands list
+      var _isBackupEligible = _abCmds.indexOf(_cmdBase) >= 0 || (_abCmds.indexOf('>') >= 0 && cmd.indexOf('>') !== -1);
+      if (_isBackupEligible && _isInBackupDir) {
+        backupNote = '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:4px;padding:8px 10px;margin-top:8px;color:#b91c1c;font-size:12px">'
+          + '<b>\u26a0 WARNING: Target is inside the backup directory (' + _escAttr(_backupDir) + ')</b><br>'
+          + '<span style="font-size:11px">Files in the backup directory will NOT be backed up. <b>Deletion cannot be recovered.</b></span></div>';
+      } else if (_isBackupEligible && _hasGlob) {
+        backupNote = '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:4px;padding:8px 10px;margin-top:8px;color:#b91c1c;font-size:12px">'
+          + '<b>\u26a0 WARNING: Auto-backup cannot protect wildcard targets</b><br>'
+          + '<span style="font-size:11px">Glob patterns (*, ?, [) expand to multiple files on the server. '
+          + 'Backup will be skipped and <b>deleted files cannot be recovered</b>.</span></div>';
+      } else if (_isBackupEligible) {
+        backupNote = '<div style="font-size:11px;color:#059669;margin-top:6px">\ud83d\udee1 Files will be auto-backed up to '
+          + _escAttr(_safetySettings.auto_backup.backup_dir) + ' before execution</div>';
+      }
+    }
     var ok = await modalConfirm('Confirm Dangerous Command',
-      '<div style="margin-bottom:8px;color:#b91c1c;font-weight:bold">This command may modify the system:</div>'
+      warnBanner
+      + '<div style="margin-bottom:8px;color:#b91c1c;font-weight:bold">This command may modify the system:</div>'
       + '<pre style="background:#f8f8f8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0;white-space:pre-wrap">' + _escAttr(cmd) + '</pre>'
       + (_cwd ? '<div style="font-size:12px;color:#888;margin-bottom:4px">Working directory: ' + _escAttr(_cwd) + '</div>' : '')
-      + '<div style="font-size:12px;color:#555">Servers (' + names.length + '): <b>' + _escAttr(names.join(', ')) + '</b></div>');
+      + '<div style="font-size:12px;color:#555">Servers (' + names.length + '): <b>' + _escAttr(names.join(', ')) + '</b></div>'
+      + backupNote);
     if (!ok) return;
   }
 
+  // Destination existence check
+  if (_safetySettings.dest_check && _safetySettings.dest_check.enabled) {
+    var destPath = _parseDestPath(cmd);
+    if (destPath) {
+      // Check which configured commands trigger the check
+      var destCmds = _safetySettings.dest_check.commands || [];
+      var shouldCheck = false;
+      for (var di = 0; di < destCmds.length; di++) {
+        if (destCmds[di] === '>' && cmd.indexOf('>') !== -1) { shouldCheck = true; break; }
+        if (cmd.match(new RegExp('\\b(?:sudo\\s+)?' + destCmds[di] + '\\b'))) { shouldCheck = true; break; }
+      }
+      if (shouldCheck) {
+        try {
+          var checkResult = await api('/api/check-path', { servers: names, path: destPath, source_basename: _parseSrcBasename(cmd) });
+          if (checkResult && checkResult.results) {
+            var existsOn = [];
+            for (var sn in checkResult.results) {
+              if (checkResult.results[sn].exists) existsOn.push(sn);
+            }
+            if (existsOn.length) {
+              var displayPath = checkResult.resolved_path || destPath;
+              var destOk = await modalConfirm('Destination Exists',
+                '<div style="margin-bottom:8px;color:#b45309;font-weight:bold">Destination path already exists:</div>'
+                + '<pre style="background:#fefce8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0">' + _escAttr(displayPath) + '</pre>'
+                + '<div style="font-size:12px;color:#555">Exists on: <b>' + _escAttr(existsOn.join(', ')) + '</b></div>'
+                + '<div style="font-size:12px;color:#888;margin-top:4px">Proceeding may overwrite existing files.</div>');
+              if (!destOk) return;
+            }
+          }
+        } catch(e) {}
+      }
+    }
+  }
+
   appendLine('$ ' + (cmd !== raw ? raw + '  \u2192  ' + cmd : cmd));
-  var result = await api('/api/run-command', { servers: names, command: serverCmd });
+  var result = await api('/api/run-command', { servers: names, command: serverCmd, history: cmd });
   if (result.error) { appendLine('[ERROR] ' + result.error); return; }
   input.value = '';
   setTimeout(loadCmdHistory, 500);
@@ -3115,9 +3365,13 @@ async function runCompare() {
     if (!data) return;
     var col = document.createElement('div');
     col.className = 'compare-col';
+    var cmpWarn = _getServerWarn(name);
+    if (cmpWarn) col.classList.add('cmp-warn');
     var exitCls = data.exit_code === 0 ? 'ok' : 'fail';
     var exitText = data.exit_code === 0 ? 'OK' : 'exit ' + data.exit_code;
+    var cmpBadge = cmpWarn ? '<span class="cmp-warn-badge" style="background:' + cmpWarn.color + '">' + _escAttr(cmpWarn.label) + '</span>' : '';
     col.innerHTML = '<div class="compare-col-header">' + _escAttr(name)
+      + cmpBadge
       + '<span class="cmp-exit ' + exitCls + '">' + exitText + '</span></div>'
       + '<div class="compare-col-body"></div>';
     var colBody = col.querySelector('.compare-col-body');
@@ -3273,6 +3527,31 @@ async function uploadFiles() {
     }
   }
 
+  // Dest check for uploads — check if dest files already exist
+  if (_safetySettings && _safetySettings.dest_check && _safetySettings.dest_check.enabled) {
+    for (var di = 0; di < pendingFiles.length; di++) {
+      var dFile = pendingFiles[di];
+      var dDest = isDir ? dest + dFile.name : dest;
+      try {
+        var dRes = await api('/api/check-path', { servers: names, path: dDest });
+        if (dRes && dRes.results) {
+          var existsOn = [];
+          for (var ds in dRes.results) {
+            if (dRes.results[ds] && dRes.results[ds].exists) existsOn.push(ds);
+          }
+          if (existsOn.length) {
+            var dOk = await modalConfirm('Destination Exists',
+              '<div style="margin-bottom:8px;color:#b45309;font-weight:bold">File already exists on remote server:</div>'
+              + '<pre style="background:#fefce8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0">' + _escAttr(dDest) + '</pre>'
+              + '<div style="font-size:12px;color:#555">Exists on: <b>' + _escAttr(existsOn.join(', ')) + '</b></div>'
+              + '<div style="font-size:12px;color:#888;margin-top:4px">Upload will overwrite the existing file.</div>');
+            if (!dOk) { appendLine('[INFO] Upload cancelled — ' + dFile.name); return; }
+          }
+        }
+      } catch(e) {}
+    }
+  }
+
   for (var i = 0; i < pendingFiles.length; i++) {
     var file = pendingFiles[i];
     var fileDest = isDir ? dest + file.name : dest;
@@ -3282,6 +3561,7 @@ async function uploadFiles() {
     formData.append('dest', fileDest);
     formData.append('servers', names.join(','));
     if (mode) formData.append('mode', mode);
+    formData.append('client_id', _clientId);
 
     appendLine('Uploading ' + file.name + ' -> ' + fileDest + '...');
     try {
@@ -3406,6 +3686,243 @@ async function editConfigYaml() {
       });
     }
   }, 50);
+}
+
+async function editGlobalConfig() {
+  var res = await fetch('/api/global-config');
+  var text = await res.text();
+  var wrap = localStorage.getItem('yamlWrap') === 'true';
+  var _cm = null;
+  document.querySelector('.modal').classList.add('wide');
+  _showModal('Global Config',
+    '<div class="yaml-editor-wrap"><textarea id="yamlEditorArea"></textarea></div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px">' +
+    '<span id="yamlValidation" style="font-size:12px;color:#666"></span>' +
+    '<span style="font-size:11px;color:#999">Shared across all environments</span></div>',
+    [
+      { text: 'Cancel', action: function() {} },
+      { text: 'Save', cls: 'primary', noAutoClose: true, action: async function() {
+        if (!_cm) return;
+        var yaml = _cm.getValue();
+        var valEl = document.getElementById('yamlValidation');
+        valEl.style.color = '#666';
+        valEl.textContent = 'Saving...';
+        var r = await fetch('/api/global-config', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({yaml: yaml})
+        });
+        var data = await r.json();
+        if (data.error) {
+          valEl.style.color = '#dc2626';
+          valEl.textContent = '\u2717 ' + data.error;
+        } else {
+          valEl.style.color = '#16a34a';
+          valEl.textContent = '\u2713 Saved and reloaded';
+          loadSafetySettings();
+          setTimeout(function() { _closeModal(); loadServers(); loadTasks(); }, 800);
+        }
+      }}
+    ]);
+  setTimeout(function() {
+    var titleEl = document.getElementById('modalTitle');
+    if (titleEl) {
+      titleEl.style.display = 'flex';
+      titleEl.style.justifyContent = 'space-between';
+      titleEl.style.alignItems = 'center';
+      var lbl = document.createElement('label');
+      lbl.style.cssText = 'font-size:11px;color:#888;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:4px;font-weight:normal';
+      lbl.innerHTML = '<input type="checkbox" id="yamlWrapToggle"' + (wrap ? ' checked' : '') + '>Wrap';
+      titleEl.appendChild(lbl);
+    }
+    var ta = document.getElementById('yamlEditorArea');
+    if (ta) {
+      _cm = CodeMirror.fromTextArea(ta, {
+        mode: 'yaml', lineNumbers: true, tabSize: 2, indentWithTabs: false,
+        lineWrapping: wrap, readOnly: false
+      });
+      _cm.setValue(text);
+      _cm.refresh();
+      document.getElementById('yamlWrapToggle').addEventListener('change', function() {
+        _cm.setOption('lineWrapping', this.checked);
+        localStorage.setItem('yamlWrap', this.checked);
+      });
+    }
+  }, 50);
+}
+
+async function showSafetySettings() {
+  var ss;
+  try {
+    var res = await apiGet('/api/safety-settings');
+    ss = await res.json();
+  } catch(e) { appendLine('[ERROR] Failed to load safety settings'); return; }
+
+  var patterns = ss.server_warn_patterns || [];
+  var ab = ss.auto_backup || { enabled: false, backup_dir: '/opt/backup', commands: ['rm','mv','>'] };
+  var dc = ss.dest_check || { enabled: false, commands: ['cp','mv','>'] };
+
+  function renderPatterns() {
+    var h = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">';
+    h += '<tr style="border-bottom:1px solid #e5e7eb"><th style="text-align:left;padding:3px 4px;color:#888">Pattern</th>';
+    h += '<th style="text-align:left;padding:3px 4px;color:#888">Label</th>';
+    h += '<th style="text-align:left;padding:3px 4px;color:#888">Color</th>';
+    h += '<th style="padding:3px 4px;width:28px"></th></tr>';
+    for (var i = 0; i < patterns.length; i++) {
+      h += '<tr style="border-bottom:1px solid #f0f0f0">';
+      h += '<td style="padding:3px 4px"><input type="text" value="' + _escAttr(patterns[i].pattern) + '" data-sf="p" data-idx="' + i + '" style="width:100%;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:12px;box-sizing:border-box"></td>';
+      h += '<td style="padding:3px 4px"><input type="text" value="' + _escAttr(patterns[i].label) + '" data-sf="l" data-idx="' + i + '" style="width:100%;padding:2px 4px;border:1px solid #ddd;border-radius:3px;font-size:12px;box-sizing:border-box"></td>';
+      h += '<td style="padding:3px 4px"><input type="color" value="' + (patterns[i].color || '#dc2626') + '" data-sf="c" data-idx="' + i + '" style="width:32px;height:24px;border:1px solid #ddd;border-radius:3px;cursor:pointer;padding:0"></td>';
+      h += '<td style="padding:3px 4px;text-align:center"><button class="btn" style="padding:1px 5px;font-size:10px;color:#ef4444" onclick="_sfRemovePattern(' + i + ')">\u00d7</button></td>';
+      h += '</tr>';
+    }
+    h += '</table>';
+    h += '<button class="btn" style="font-size:11px;padding:2px 8px" onclick="_sfAddPattern()">+ Add Pattern</button>';
+    return h;
+  }
+
+  function renderCmdChecks(id, cmds, allCmds) {
+    var h = '';
+    for (var i = 0; i < allCmds.length; i++) {
+      var checked = cmds.indexOf(allCmds[i]) >= 0 ? ' checked' : '';
+      h += '<label style="font-size:12px;margin-right:10px;cursor:pointer"><input type="checkbox" data-sf="' + id + '" value="' + allCmds[i] + '"' + checked + '> ' + _escAttr(allCmds[i]) + '</label>';
+    }
+    return h;
+  }
+
+  function buildHtml() {
+    var html = '';
+    // Section 1: Server Warning Patterns
+    html += '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#b91c1c">';
+    html += 'Server Warning Patterns</div>';
+    html += '<div style="font-size:11px;color:#888;margin-bottom:6px">Glob wildcards: * (any chars), ? (single char). Matched against server name and host.</div>';
+    html += '<div id="sfPatterns">' + renderPatterns() + '</div>';
+
+    // Row 1: Auto Backup | Destination Check
+    var abDis = ab.enabled ? '' : ' disabled';
+    var abOpacity = ab.enabled ? '' : 'opacity:0.45;pointer-events:none;';
+    var dcOpacity = dc.enabled ? '' : 'opacity:0.45;pointer-events:none;';
+    html += '<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px;display:flex;gap:20px">';
+    // Left: Auto Backup
+    html += '<div style="flex:1;min-width:0">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+    html += '<span style="font-weight:600;font-size:13px;color:#059669">Auto Backup</span>';
+    html += '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="sfAbEnabled" onchange="_sfToggleSection(\'sfAbBody\',this.checked)"' + (ab.enabled ? ' checked' : '') + '> On</label>';
+    html += '</div>';
+    html += '<div id="sfAbBody" style="' + abOpacity + '">';
+    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">';
+    html += '<label style="font-size:12px;color:#555;white-space:nowrap">Dir:</label>';
+    html += '<input type="text" id="sfAbDir" value="' + _escAttr(ab.backup_dir) + '"' + abDis + ' style="flex:1;padding:3px 6px;border:1px solid #ddd;border-radius:3px;font-size:12px">';
+    html += '</div>';
+    html += '<div style="font-size:12px;color:#555;margin-bottom:4px">Commands:</div>';
+    html += '<div>' + renderCmdChecks('ab', ab.commands, ['rm','mv','>','dd']) + '</div>';
+    html += '</div></div>';
+    // Right: Destination Check
+    html += '<div style="flex:1;min-width:0;border-left:1px solid #e5e7eb;padding-left:20px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+    html += '<span style="font-weight:600;font-size:13px;color:#b45309">Dest Check</span>';
+    html += '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="sfDcEnabled" onchange="_sfToggleSection(\'sfDcBody\',this.checked)"' + (dc.enabled ? ' checked' : '') + '> On</label>';
+    html += '</div>';
+    html += '<div id="sfDcBody" style="' + dcOpacity + '">';
+    html += '<div style="font-size:12px;color:#555;margin-bottom:4px">Commands:</div>';
+    html += '<div>' + renderCmdChecks('dc', dc.commands, ['cp','mv','>']) + '</div>';
+    html += '</div></div>';
+    html += '</div>';
+
+    // Row 2: Directory Listing | Output Sync
+    html += '<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px;display:flex;gap:20px">';
+    // Left: Directory Listing
+    html += '<div style="flex:1;min-width:0">';
+    html += '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#2563eb">Directory Listing</div>';
+    html += '<div style="display:flex;gap:8px;align-items:center">';
+    html += '<label style="font-size:12px;color:#555;white-space:nowrap">ls cmd:</label>';
+    html += '<input type="text" id="sfLsCmd" value="' + _escAttr(_lsCmd) + '" style="flex:1;padding:3px 6px;border:1px solid #ddd;border-radius:3px;font-size:12px;font-family:monospace">';
+    html += '</div>';
+    html += '</div>';
+    // Right: Output Sync
+    html += '<div style="flex:1;min-width:0;border-left:1px solid #e5e7eb;padding-left:20px">';
+    html += '<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#7c3aed">Output Sync</div>';
+    html += '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="sfSyncOutput"' + (_syncOutput ? ' checked' : '') + '> Sync across tabs</label>';
+    html += '<div style="font-size:11px;color:#aaa;margin-top:4px">Off = only show own output</div>';
+    html += '</div>';
+    html += '</div>';
+
+    return html;
+  }
+
+  // Expose helpers for inline onclick
+  window._sfToggleSection = function(bodyId, enabled) {
+    var el = document.getElementById(bodyId);
+    if (!el) return;
+    el.style.opacity = enabled ? '' : '0.45';
+    el.style.pointerEvents = enabled ? '' : 'none';
+    var inputs = el.querySelectorAll('input');
+    for (var i = 0; i < inputs.length; i++) inputs[i].disabled = !enabled;
+  };
+  window._sfRemovePattern = function(idx) {
+    _sfReadPatterns();
+    patterns.splice(idx, 1);
+    document.getElementById('sfPatterns').innerHTML = renderPatterns();
+  };
+  window._sfAddPattern = function() {
+    _sfReadPatterns();
+    patterns.push({ pattern: '*new*', label: 'WARN', color: '#eab308' });
+    document.getElementById('sfPatterns').innerHTML = renderPatterns();
+  };
+
+  function _sfReadPatterns() {
+    // Read current pattern values from inputs
+    var pInputs = document.querySelectorAll('input[data-sf="p"]');
+    var lInputs = document.querySelectorAll('input[data-sf="l"]');
+    var cInputs = document.querySelectorAll('input[data-sf="c"]');
+    patterns = [];
+    for (var i = 0; i < pInputs.length; i++) {
+      var pat = pInputs[i].value.trim();
+      if (pat) patterns.push({ pattern: pat, label: lInputs[i].value.trim() || 'WARN', color: cInputs[i].value || '#dc2626' });
+    }
+  }
+
+  function _sfReadChecks(id) {
+    var cmds = [];
+    document.querySelectorAll('input[data-sf="' + id + '"]:checked').forEach(function(el) { cmds.push(el.value); });
+    return cmds;
+  }
+
+  _showModal('Safety Settings', buildHtml(), [
+    { text: 'Cancel', action: function() {} },
+    { text: 'Save', cls: 'primary', noAutoClose: true, action: async function() {
+      _sfReadPatterns();
+      var body = {
+        server_warn_patterns: patterns,
+        auto_backup: {
+          enabled: document.getElementById('sfAbEnabled').checked,
+          backup_dir: document.getElementById('sfAbDir').value.trim() || '/opt/backup',
+          commands: _sfReadChecks('ab')
+        },
+        dest_check: {
+          enabled: document.getElementById('sfDcEnabled').checked,
+          commands: _sfReadChecks('dc')
+        }
+      };
+      var newLs = (document.getElementById('sfLsCmd').value.trim()) || 'ls -ltrah';
+      _lsCmd = newLs;
+      localStorage.setItem('lsCmd', newLs);
+      _syncOutput = document.getElementById('sfSyncOutput').checked;
+      localStorage.setItem('syncOutput', _syncOutput ? '1' : '0');
+      var r = await fetch('/api/update-safety', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+      });
+      var data = await r.json();
+      if (data.error) {
+        appendLine('[ERROR] ' + data.error);
+      } else {
+        appendLine('Safety settings saved');
+        loadSafetySettings();
+        loadServers();
+        _closeModal();
+      }
+    }}
+  ]);
 }
 
 function _escapeHtml(s) {
@@ -3842,6 +4359,7 @@ var _FP_RE = /(\/(?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+(?:\.[a-zA-Z0-9]+)?\/?)/g;
 var _LS_FILE_RE = /\d{2}:\d{2}\s+(.+)$|[A-Z][a-z]{2}\s+\d+\s+\d{4}\s+(.+)$/;
 var _fpCurrentPath = '';
 var _fpCurrentServer = '';
+var _lsCmd = localStorage.getItem('lsCmd') || 'ls -ltrah';
 var _fpLastDir = '';  // directory context from command headers
 var _fpIsListCmd = false;  // whether last command was ls/ll/find
 
@@ -3855,14 +4373,25 @@ function _isLikelyFilePath(p) {
   return false;
 }
 function _looksLikeDir(path) {
-  // No extension in last segment → likely a directory (e.g. /home/testuser, /var/log)
+  if (path.endsWith('/')) return true;
   var p = path.replace(/\/+$/, '');
   var last = p.substring(p.lastIndexOf('/') + 1);
-  return last.indexOf('.') < 0;
+  // Known directory patterns: only consider it a dir if it matches well-known dirs
+  // or has no extension AND is a short single-segment name under common parent dirs
+  var knownDirs = ['bin','sbin','lib','lib64','etc','var','tmp','opt','usr','home','root','dev','proc','sys','run','boot','mnt','media','srv'];
+  if (knownDirs.indexOf(last) >= 0) return true;
+  // Paths with extensions are files
+  if (last.indexOf('.') >= 0) return false;
+  // Count segments: deep paths without extensions are ambiguous — default to file
+  var segments = p.split('/').filter(function(s) { return s; });
+  // 1-2 segments like /home, /var/log — likely directory
+  if (segments.length <= 2) return true;
+  // Deeper paths like /etc/os-release, /var/log/messages — default to file
+  return false;
 }
 
 function _extractDirFromCmd(text) {
-  // Match: ── [server] $ ls -ltr /dir ── or ls -l /dir or ll /dir or find /dir ...
+  // Match: ── [server] $ ls -ltrah /dir ── or ls -l /dir or ll /dir or find /dir ...
   var m = text.match(/(?:\$\s+)?(?:ls|find|ll)\s+(?:-[^\s]*\s+)*(\/[^\s─]*)/);
   if (m) {
     var d = m[1];
@@ -3896,7 +4425,7 @@ async function _fpDblClick(e) {
   }
   var dirPath = path.endsWith('/') ? path : path + '/';
   _cwdSet(dirPath);
-  api('/api/run-command', { servers: names, command: 'ls -ltr ' + dirPath });
+  api('/api/run-command', { servers: names, command: _lsCmd + ' ' + dirPath });
 }
 
 function _makeFpSpan(displayText, fullPath, isDir) {
@@ -4101,8 +4630,11 @@ function _fpShowMenu(e, target) {
   var menu = document.getElementById('fpMenu');
 
   // Show/hide items based on file vs directory
-  menu.querySelectorAll('.fp-file-only').forEach(function(el) { el.style.display = _fpIsDir ? 'none' : ''; });
-  menu.querySelectorAll('.fp-dir-only').forEach(function(el) { el.style.display = _fpIsDir ? '' : 'none'; });
+  // For ambiguous paths (no extension, not from ls -l), show both file and dir options
+  var _pathName = path.replace(/\/+$/, '').split('/').pop() || '';
+  var _isAmbiguous = !_fpIsDir && _pathName.indexOf('.') < 0 && !path.endsWith('/');
+  menu.querySelectorAll('.fp-file-only').forEach(function(el) { el.style.display = _fpIsDir && !_isAmbiguous ? 'none' : ''; });
+  menu.querySelectorAll('.fp-dir-only').forEach(function(el) { el.style.display = _fpIsDir || _isAmbiguous ? '' : 'none'; });
 
   var x = e.clientX, y = e.clientY;
   menu.classList.add('show');
@@ -4160,7 +4692,7 @@ async function _fpAction(action) {
   } else if (action === 'openDir') {
     var dirPath = path.endsWith('/') ? path : path + '/';
     _cwdSet(dirPath);
-    var cmd = 'ls -ltr ' + dirPath;
+    var cmd = _lsCmd + ' ' + dirPath;
     var input = document.getElementById('cmdInput');
     input.value = '';
     await api('/api/run-command', { servers: names, command: cmd });
@@ -4170,7 +4702,7 @@ async function _fpAction(action) {
     if (!parent) parent = '/';
     if (!parent.endsWith('/')) parent += '/';
     _cwdSet(parent);
-    var cmd = 'ls -ltr ' + parent;
+    var cmd = _lsCmd + ' ' + parent;
     var input = document.getElementById('cmdInput');
     input.value = '';
     await api('/api/run-command', { servers: names, command: cmd });
@@ -4189,10 +4721,22 @@ async function _fpAction(action) {
   } else if (action === 'download') {
     downloadRemoteFile(names, path);
   } else if (action === 'delete') {
+    var _delNote = '<b style="color:#dc2626">This action cannot be undone.</b>';
+    if (_safetySettings.auto_backup && _safetySettings.auto_backup.enabled) {
+      var _bdir = (_safetySettings.auto_backup.backup_dir || '').replace(/\/+$/, '');
+      if (_bdir && (path.replace(/\/+$/, '') === _bdir || path.indexOf(_bdir + '/') === 0)) {
+        _delNote = '<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:4px;padding:8px 10px;color:#b91c1c;font-size:12px">'
+          + '<b>\u26a0 Target is inside the backup directory (' + _escAttr(_bdir) + ')</b><br>'
+          + '<span style="font-size:11px"><b>Deletion cannot be recovered.</b></span></div>';
+      } else {
+        _delNote = '<div style="font-size:11px;color:#059669">\ud83d\udee1 File will be auto-backed up to '
+          + _escAttr(_bdir) + ' before deletion</div>';
+      }
+    }
     var ok = await modalConfirm(
       'Delete Remote File',
       'Delete <code>' + _escAttr(path) + '</code> on <b>' + names.join(', ') + '</b>?<br><br>'
-      + '<b style="color:#dc2626">This action cannot be undone.</b>'
+      + _delNote
     );
     if (!ok) return;
     appendLine('[delete] Deleting ' + path + ' on ' + names.join(', ') + '...');
@@ -4228,43 +4772,72 @@ function _cwdRender() {
 
 function _cwdNavigate(path) {
   _cwdSet(path);
-  // Auto-run ls -ltr in the new directory
+  // Auto-run ls -ltrah in the new directory
   var names = getSelectedServers();
   if (names.length) {
-    var cmd = 'ls -ltr ' + path;
+    var cmd = _lsCmd + ' ' + path;
     document.getElementById('cmdInput').value = cmd;
     runCommand();
   }
 }
 
+function _cwdNormalize(path) {
+  var parts = path.split('/').filter(Boolean);
+  var resolved = [];
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] === '..') { resolved.pop(); }
+    else if (parts[i] !== '.') { resolved.push(parts[i]); }
+  }
+  return '/' + resolved.join('/');
+}
+
 function _cwdSet(path) {
   if (!path) path = '/';
-  // Ensure trailing slash
+  path = _cwdNormalize(path);
   if (!path.endsWith('/')) path += '/';
   _cwd = path;
   _fpLastDir = path;
   _cwdRender();
 }
 
-function _cwdReset() {
-  _cwd = '';
-  _fpLastDir = '';
-  _cwdRender();
+async function _cwdGoHome() {
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+  var dir = await _cwdFetchPwd(names[0], 'echo ~');
+  if (dir) {
+    _cwdNavigate(dir + '/');
+  }
 }
 
 async function _cwdSync() {
   var names = getSelectedServers();
   if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
-  var result = await api('/api/run-command-compare', { servers: [names[0]], command: 'pwd' });
-  if (result.error) { appendLine('[ERROR] ' + result.error); return; }
-  var data = result.results[names[0]];
+  var dir = await _cwdFetchPwd(names[0]);
+  if (dir) {
+    _cwdSet(dir);
+    appendLine('[cwd] Synced: ' + _cwd);
+  } else {
+    appendLine('[WARN] Could not detect cwd');
+  }
+}
+
+// Silent sync — no output, used for auto-detect on first connect
+async function _cwdSyncSilent() {
+  var names = getSelectedServers();
+  if (!names.length) return;
+  var dir = await _cwdFetchPwd(names[0]);
+  if (dir) _cwdSet(dir);
+}
+
+async function _cwdFetchPwd(serverName, cmd) {
+  var result = await api('/api/run-command-compare', { servers: [serverName], command: cmd || 'pwd' });
+  if (result.error) return null;
+  var data = result.results[serverName];
   if (data && data.lines && data.lines.length) {
     var dir = stripNonColorAnsi(data.lines[0]).replace(/\x1b\[[0-9;]*m/g, '').trim();
-    if (dir.startsWith('/')) {
-      _cwdSet(dir);
-      appendLine('[cwd] Synced: ' + _cwd);
-    }
+    if (dir.startsWith('/')) return dir;
   }
+  return null;
 }
 
 function _cwdDetectFromCommand(cmd) {
@@ -4375,6 +4948,7 @@ function _showHelpModal() {
 // --- Init ---
 connectWS();
 loadConfigs();
+loadSafetySettings();
 loadServers();
 loadTasks();
 loadCmdHistory();
@@ -4392,6 +4966,280 @@ try {
     if (pBtn) { pBtn.innerHTML = 'P &#x2717;'; document.body.classList.add('hide-progress'); }
   }
 } catch(e) {}
+
+// ── Log Analyzer ──────────────────────────────────────────────
+
+var _logPanelReady = false;
+
+function switchSidebarTab(tab) {
+  document.querySelectorAll('.sidebar-tab').forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-stab') === tab);
+  });
+  document.getElementById('sidebarPane-tasks').style.display = tab === 'tasks' ? '' : 'none';
+  document.getElementById('sidebarPane-logs').style.display = tab === 'logs' ? '' : 'none';
+  document.getElementById('taskMenuWrap').style.display = tab === 'tasks' ? '' : 'none';
+  if (tab === 'logs' && !_logPanelReady) {
+    _buildLogPanel();
+    _logPanelReady = true;
+  }
+}
+
+async function _buildLogPanel() {
+  var sources = [];
+  try {
+    var res = await fetch('/api/log-sources');
+    sources = await res.json();
+  } catch(e) {}
+
+  var html = '';
+
+  // Log source
+  html += '<div class="lp-field"><label class="lp-label">Log Source</label>';
+  html += '<select id="logSourceSelect" onchange="logSourceChanged()">';
+  html += '<option value="">Custom path...</option>';
+  for (var i = 0; i < sources.length; i++) {
+    var s = sources[i];
+    html += '<option value="' + s.path + '" data-type="' + s.type + '">' + s.name + ' (' + s.path + ')</option>';
+  }
+  html += '</select></div>';
+
+  // Custom path
+  html += '<div class="lp-field" id="logCustomPathRow"><label class="lp-label">Log File Path</label>';
+  html += '<input type="text" id="logPathInput" placeholder="/path/to/logfile"></div>';
+
+  // Log type
+  var types = [['generic','generic'],['ping-gateway','PingGateway (IG)'],['ping-am','PingAM'],['ping-ds','PingDS'],['ping-idm','PingIDM']];
+  html += '<div class="lp-field"><label class="lp-label">Log Type</label>';
+  html += '<select id="logTypeSelect">';
+  for (var i = 0; i < types.length; i++) {
+    html += '<option value="' + types[i][0] + '">' + types[i][1] + '</option>';
+  }
+  html += '</select></div>';
+
+  // Mode toggle
+  html += '<div class="lp-field"><label class="lp-label">Fetch Mode</label>';
+  html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html += '<label style="font-size:12px"><input type="radio" name="logMode" value="tail" checked onchange="logModeChanged()"> Last N lines</label>';
+  html += '<label style="font-size:12px"><input type="radio" name="logMode" value="time_range" onchange="logModeChanged()"> Time range</label>';
+  var lbOpts = [['','Custom'],['5','5 min'],['15','15 min'],['30','30 min'],['60','1 hr'],['120','2 hr'],['360','6 hr'],['720','12 hr'],['1440','24 hr']];
+  html += '<select id="logLookback" onchange="logLookbackChanged()" style="padding:1px 3px;font-size:11px;color:#666;display:none">';
+  for (var i = 0; i < lbOpts.length; i++) {
+    html += '<option value="' + lbOpts[i][0] + '">' + lbOpts[i][1] + '</option>';
+  }
+  html += '</select>';
+  html += '</div></div>';
+
+  // Tail lines
+  html += '<div class="lp-field" id="logTailRow"><label class="lp-label">Lines</label>';
+  html += '<input type="number" id="logLinesInput" value="2000" min="1" max="100000" style="width:100px"></div>';
+
+  // Time range
+  html += '<div class="lp-field" id="logTimeRow" style="display:none">';
+  html += '<label class="lp-label">From</label>';
+  html += '<input type="text" id="logTimeFrom" placeholder="YYYY-MM-DD HH:MM:SS" style="margin-bottom:4px">';
+  html += '<label class="lp-label">To</label>';
+  html += '<input type="text" id="logTimeTo" placeholder="YYYY-MM-DD HH:MM:SS">';
+  html += '</div>';
+
+  // Keywords
+  html += '<div class="lp-field"><label class="lp-label">Keyword Filter (grep -E)</label>';
+  html += '<input type="text" id="logKeywords" placeholder="e.g. ERROR|Exception|timeout"></div>';
+
+  document.getElementById('logPanelBody').innerHTML = html;
+}
+
+function showLogAnalyzer() {
+  switchSidebarTab('logs');
+}
+
+function logSourceChanged() {
+  var sel = document.getElementById('logSourceSelect');
+  var customRow = document.getElementById('logCustomPathRow');
+  var typeSelect = document.getElementById('logTypeSelect');
+  if (sel.value) {
+    customRow.style.display = 'none';
+    var opt = sel.options[sel.selectedIndex];
+    var dataType = opt.getAttribute('data-type') || 'generic';
+    typeSelect.value = dataType;
+  } else {
+    customRow.style.display = '';
+  }
+}
+
+function logLookbackChanged() {
+  var mins = parseInt(document.getElementById('logLookback').value);
+  if (!mins) return;
+  var now = new Date();
+  var from = new Date(now.getTime() - mins * 60000);
+  function fmt(d) {
+    return d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0') + ' ' +
+      String(d.getHours()).padStart(2, '0') + ':' +
+      String(d.getMinutes()).padStart(2, '0') + ':' +
+      String(d.getSeconds()).padStart(2, '0');
+  }
+  document.getElementById('logTimeFrom').value = fmt(from);
+  document.getElementById('logTimeTo').value = fmt(now);
+}
+
+function logModeChanged() {
+  var mode = document.querySelector('input[name="logMode"]:checked').value;
+  document.getElementById('logTailRow').style.display = mode === 'tail' ? '' : 'none';
+  document.getElementById('logTimeRow').style.display = mode === 'time_range' ? '' : 'none';
+  document.getElementById('logLookback').style.display = mode === 'time_range' ? '' : 'none';
+}
+
+async function runLogAnalysis() {
+  var servers = getSelectedServers();
+  if (!servers.length) {
+    appendLine('[WARN] No servers selected');
+    return;
+  }
+
+  var sel = document.getElementById('logSourceSelect');
+  var logPath = sel.value || document.getElementById('logPathInput').value.trim();
+  if (!logPath) {
+    appendLine('[WARN] No log path specified');
+    return;
+  }
+
+  var logType = document.getElementById('logTypeSelect').value;
+  var mode = document.querySelector('input[name="logMode"]:checked').value;
+  var lines = parseInt(document.getElementById('logLinesInput').value) || 2000;
+  var timeFrom = document.getElementById('logTimeFrom') ? document.getElementById('logTimeFrom').value.trim() : '';
+  var timeTo = document.getElementById('logTimeTo') ? document.getElementById('logTimeTo').value.trim() : '';
+  var keywords = document.getElementById('logKeywords').value.trim();
+
+  appendLine('');
+  appendLine('\u2550\u2550\u2550 Log Analysis: ' + logPath + ' \u2550\u2550\u2550');
+
+  try {
+    var res = await fetch('/api/analyze-logs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        servers: servers,
+        log_path: logPath,
+        log_type: logType,
+        mode: mode,
+        lines: lines,
+        time_from: timeFrom,
+        time_to: timeTo,
+        keywords: keywords
+      })
+    });
+    var data = await res.json();
+    if (data.error) {
+      appendLine('[ERROR] ' + data.error);
+      return;
+    }
+    var results = data.results || {};
+    for (var name in results) {
+      var r = results[name];
+      if (r.error) {
+        appendLine('[' + name + '] ERROR: ' + r.error);
+        continue;
+      }
+      var fetched = r.lines_fetched || r.total_lines || 0;
+      var p = '[' + name + '] ';
+      appendLine(p + fetched.toLocaleString() + ' lines analyzed');
+      appendLine(p + 'Errors: ' + (r.errors || 0) + '  Warnings: ' + (r.warnings || 0));
+      if (r.top_errors && r.top_errors.length) {
+        appendLine(p + 'Top errors:');
+        for (var j = 0; j < Math.min(r.top_errors.length, 5); j++) {
+          var te = r.top_errors[j];
+          var pad = te.count < 10 ? '  ' : (te.count < 100 ? ' ' : '');
+          var lineRef = te.lines && te.lines.length ? ' (L' + te.lines.join(',L') + ')' : '';
+          appendLine(p + pad + te.count + 'x "' + te.pattern + '"' + lineRef);
+        }
+      }
+      if (r.findings && r.findings.length) {
+        appendLine(p + 'Findings:');
+        for (var k = 0; k < r.findings.length; k++) {
+          var f = r.findings[k];
+          var icon = f.level === 'error' ? '\u2718' : '\u26a0';
+          var lineInfo = f.line ? ' (L' + f.line + ')' : '';
+          appendLine(p + icon + ' ' + f.message + lineInfo);
+          if (f.suggestion) appendLine(p + '  \u2192 ' + f.suggestion);
+        }
+      }
+    }
+    appendLine('\u2550'.repeat(50));
+  } catch(e) {
+    appendLine('[ERROR] Log analysis failed: ' + e.message);
+  }
+}
+
+async function manageLogSources() {
+  try {
+    var res = await fetch('/api/log-sources');
+    var sources = await res.json();
+    var html = '<div style="margin-bottom:10px">';
+    if (!sources.length) {
+      html += '<p style="color:#888;font-size:12px">No log sources configured. Add one below.</p>';
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px">';
+      html += '<tr style="border-bottom:1px solid #e5e7eb"><th style="text-align:left;padding:4px 6px;color:#888">Name</th>';
+      html += '<th style="text-align:left;padding:4px 6px;color:#888">Path</th>';
+      html += '<th style="text-align:left;padding:4px 6px;color:#888">Type</th>';
+      html += '<th style="padding:4px 6px"></th></tr>';
+      for (var i = 0; i < sources.length; i++) {
+        html += '<tr style="border-bottom:1px solid #f0f0f0">';
+        html += '<td style="padding:4px 6px;font-weight:600">' + sources[i].name + '</td>';
+        html += '<td style="padding:4px 6px;color:#555;font-size:11px">' + sources[i].path + '</td>';
+        html += '<td style="padding:4px 6px;color:#888">' + sources[i].type + '</td>';
+        html += '<td style="padding:4px 6px"><button class="btn" style="padding:2px 6px;font-size:10px;color:#ef4444" onclick="deleteLogSource(' + i + ')">Del</button></td>';
+        html += '</tr>';
+      }
+      html += '</table>';
+    }
+    html += '<div style="border-top:1px solid #e5e7eb;padding-top:8px">';
+    html += '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Add Log Source</div>';
+    html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+    html += '<input type="text" id="newLogName" placeholder="Name" style="width:100px;padding:4px;border:1px solid #ddd;border-radius:3px;font-size:12px">';
+    html += '<input type="text" id="newLogPath" placeholder="/path/to/log" style="flex:1;min-width:160px;padding:4px;border:1px solid #ddd;border-radius:3px;font-size:12px">';
+    html += '<select id="newLogType" style="padding:4px;border:1px solid #ddd;border-radius:3px;font-size:12px">';
+    html += '<option value="generic">generic</option><option value="ping-gateway">ping-gateway</option>';
+    html += '<option value="ping-am">ping-am</option><option value="ping-ds">ping-ds</option>';
+    html += '<option value="ping-idm">ping-idm</option></select>';
+    html += '<button class="btn primary" style="padding:4px 10px;font-size:12px" onclick="addLogSource()">Add</button>';
+    html += '</div></div></div>';
+    _showModal('Manage Log Sources', html, [{text: 'Close', action: function(){ showLogAnalyzer(); }}]);
+  } catch(e) {
+    appendLine('[ERROR] ' + e.message);
+  }
+}
+
+async function addLogSource() {
+  var name = document.getElementById('newLogName').value.trim();
+  var path = document.getElementById('newLogPath').value.trim();
+  var type = document.getElementById('newLogType').value;
+  if (!name || !path) { appendLine('[WARN] Name and path are required'); return; }
+  try {
+    var res = await fetch('/api/add-log-source', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name, path: path, type: type})
+    });
+    var data = await res.json();
+    if (data.error) { appendLine('[ERROR] ' + data.error); return; }
+    appendLine('Log source added: ' + name);
+    manageLogSources();
+  } catch(e) { appendLine('[ERROR] ' + e.message); }
+}
+
+async function deleteLogSource(idx) {
+  try {
+    var res = await fetch('/api/delete-log-source', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({index: idx})
+    });
+    var data = await res.json();
+    if (data.error) { appendLine('[ERROR] ' + data.error); return; }
+    appendLine('Log source removed: ' + (data.removed && data.removed.name || idx));
+    manageLogSources();
+  } catch(e) { appendLine('[ERROR] ' + e.message); }
+}
 </script>
 </body>
 </html>
