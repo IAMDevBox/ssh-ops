@@ -179,6 +179,9 @@
   .cwd-bar .cwd-sep { color: #bbb; margin: 0 1px; }
   .cwd-bar .cwd-home { cursor: pointer; padding: 1px 4px; border-radius: 2px; color: #888; font-size: 14px; }
   .cwd-bar .cwd-home:hover { background: #e8e8e8; color: #333; }
+  .cwd-bar .cwd-bookmark { cursor: pointer; padding: 1px 4px; border-radius: 2px; color: #bbb; font-size: 13px; position: relative; }
+  .cwd-bar .cwd-bookmark:hover { background: #e8e8e8; color: #f59e0b; }
+  .cwd-bar .cwd-bookmark.active { color: #f59e0b; }
   .cwd-bar .cwd-backup { cursor: pointer; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-left: auto; white-space: nowrap; }
   .cwd-bar .cwd-backup.ok { color: #16a34a; background: #f0fdf4; border: 1px solid #bbf7d0; }
   .cwd-bar .cwd-backup.warn { color: #d97706; background: #fffbeb; border: 1px solid #fde68a; }
@@ -461,6 +464,7 @@
       <span class="cwd-label">cwd</span>
       <span id="cwdBreadcrumb"></span>
       <span class="cwd-home" onclick="_cwdGoHome()" title="Go to home directory">&#x2302;</span>
+      <span class="cwd-bookmark" id="cwdBookmark" onclick="_cwdBookmarkClick(event)" title="Bookmark this directory">&#x2606;</span>
       <span class="cwd-backup off" id="cwdBackupStatus" onclick="_backupMenu(event)" title="Click for options"></span>
     </div>
     <div class="actions locked" id="actionsPanel">
@@ -1417,7 +1421,7 @@ async function _promptSftpOtp(serverName, allServers) {
         '<div class="modal-title">' + label + '</div>' +
         '<p style="margin:8px 0;font-size:13px">' + desc + '</p>' +
         listHtml +
-        '<input id="sftpOtpInput" type="password" placeholder="OTP" style="width:100%;padding:6px;box-sizing:border-box;margin:4px 0 12px">' +
+        '<input id="sftpOtpInput" type="text" placeholder="OTP" autocomplete="one-time-code" style="width:100%;padding:8px;box-sizing:border-box;margin:4px 0 12px;font-family:monospace;font-size:18px;text-align:center;letter-spacing:2px">' +
         '<div id="sftpOtpWarn" style="display:none;color:#dc2626;font-size:12px;margin-bottom:8px"></div>' +
         '<div style="text-align:right">' +
           '<button id="sftpOtpCancel" class="btn" style="margin-right:8px">Cancel</button>' +
@@ -1427,10 +1431,11 @@ async function _promptSftpOtp(serverName, allServers) {
     document.body.appendChild(overlay);
     var inp = document.getElementById('sftpOtpInput');
     var warn = document.getElementById('sftpOtpWarn');
+    inp.addEventListener('input', function() { _formatOtp(inp); });
     inp.focus();
     function finish(val) { document.body.removeChild(overlay); resolve(val); }
     function submit() {
-      var val = inp.value;
+      var val = inp.value.replace(/\s/g, '');
       if (!val) return;
       var reuse = _checkOtpReuse(val);
       if (reuse) {
@@ -4831,6 +4836,136 @@ function _cwdSet(path) {
   _cwd = path;
   _fpLastDir = path;
   _cwdRender();
+  _cwdBookmarkSync();
+}
+
+// --- Directory Bookmarks (localStorage, global across servers) ---
+var _bookmarkKey = 'sshops_dir_bookmarks';
+
+function _cwdBookmarkSync() {
+  var el = document.getElementById('cwdBookmark');
+  if (!el || !_cwd) return;
+  var bookmarks = _bookmarkGet();
+  var isBookmarked = bookmarks.indexOf(_cwd) >= 0;
+  el.innerHTML = isBookmarked ? '&#x2605;' : '&#x2606;';  // ★ vs ☆
+  el.classList.toggle('active', isBookmarked);
+  el.title = isBookmarked ? 'Remove bookmark' : 'Bookmark this directory';
+}
+
+function _bookmarkGet() {
+  try { return JSON.parse(localStorage.getItem(_bookmarkKey)) || []; }
+  catch(e) { return []; }
+}
+
+function _bookmarkSave(list) {
+  localStorage.setItem(_bookmarkKey, JSON.stringify(list));
+}
+
+function _bookmarkAdd(path) {
+  var list = _bookmarkGet();
+  if (list.indexOf(path) < 0) {
+    list.push(path);
+    list.sort();
+    _bookmarkSave(list);
+  }
+  _cwdBookmarkSync();
+}
+
+function _bookmarkRemove(path) {
+  var list = _bookmarkGet().filter(function(p) { return p !== path; });
+  _bookmarkSave(list);
+  _cwdBookmarkSync();
+}
+
+function _cwdBookmarkClick(e) {
+  e.stopPropagation();
+  var bookmarks = _bookmarkGet();
+  var isBookmarked = _cwd && bookmarks.indexOf(_cwd) >= 0;
+
+  // If no bookmarks and not bookmarked, just add current
+  if (!bookmarks.length && !isBookmarked && _cwd) {
+    _bookmarkAdd(_cwd);
+    return;
+  }
+
+  // Show dropdown menu
+  var old = document.getElementById('bookmarkMenu');
+  if (old) { old.remove(); return; }
+
+  var el = document.getElementById('cwdBookmark');
+  var rect = el.getBoundingClientRect();
+  var menu = document.createElement('div');
+  menu.id = 'bookmarkMenu';
+  menu.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #ccc;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:4px 0;font-size:12px;min-width:200px;max-height:300px;overflow-y:auto;';
+  menu.style.left = rect.left + 'px';
+  menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+
+  // Toggle current directory bookmark
+  if (_cwd) {
+    var toggleDiv = document.createElement('div');
+    toggleDiv.innerHTML = '<span style="display:inline-block;width:18px;text-align:center;margin-right:2px">' + (isBookmarked ? '\u2605' : '\u2606') + '</span>' + (isBookmarked ? 'Remove bookmark' : 'Bookmark current dir');
+    toggleDiv.style.cssText = 'padding:5px 12px;cursor:pointer;white-space:nowrap;color:' + (isBookmarked ? '#d97706' : '#2563eb') + ';border-bottom:1px solid #eee;';
+    toggleDiv.onmouseenter = function() { toggleDiv.style.background = '#f0f4ff'; };
+    toggleDiv.onmouseleave = function() { toggleDiv.style.background = ''; };
+    toggleDiv.onclick = function(ev) {
+      ev.stopPropagation();
+      if (isBookmarked) _bookmarkRemove(_cwd); else _bookmarkAdd(_cwd);
+      menu.remove();
+    };
+    menu.appendChild(toggleDiv);
+  }
+
+  // List bookmarks
+  if (bookmarks.length) {
+    var header = document.createElement('div');
+    header.textContent = 'Bookmarks';
+    header.style.cssText = 'padding:4px 12px 2px;font-size:10px;color:#888;text-transform:uppercase;';
+    menu.appendChild(header);
+
+    bookmarks.forEach(function(path) {
+      var isCurrent = path === _cwd;
+      var div = document.createElement('div');
+      div.style.cssText = 'padding:4px 12px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:4px;' + (isCurrent ? 'background:#f0f4ff;font-weight:600;' : '');
+      var label = document.createElement('span');
+      label.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;';
+      label.textContent = path;
+      label.title = path;
+      div.appendChild(label);
+      // Delete button
+      var del = document.createElement('span');
+      del.textContent = '\u00d7';
+      del.title = 'Remove';
+      del.style.cssText = 'color:#ccc;font-size:14px;padding:0 2px;flex-shrink:0;';
+      del.onmouseenter = function() { del.style.color = '#dc2626'; };
+      del.onmouseleave = function() { del.style.color = '#ccc'; };
+      del.onclick = function(ev) {
+        ev.stopPropagation();
+        _bookmarkRemove(path);
+        div.remove();
+        // Remove header if empty
+        if (!_bookmarkGet().length && header.parentNode) header.remove();
+      };
+      div.appendChild(del);
+      div.onmouseenter = function() { if (!isCurrent) div.style.background = '#f0f4ff'; };
+      div.onmouseleave = function() { if (!isCurrent) div.style.background = ''; };
+      div.onclick = function(ev) {
+        ev.stopPropagation();
+        menu.remove();
+        if (!isCurrent) _cwdNavigate(path);
+      };
+      menu.appendChild(div);
+    });
+  } else if (!_cwd) {
+    var empty = document.createElement('div');
+    empty.textContent = 'No bookmarks yet';
+    empty.style.cssText = 'padding:8px 12px;color:#aaa;font-style:italic;';
+    menu.appendChild(empty);
+  }
+
+  document.body.appendChild(menu);
+  setTimeout(function() {
+    document.addEventListener('click', function _close() { menu.remove(); document.removeEventListener('click', _close); }, { once: true });
+  }, 0);
 }
 
 function _backupMenu(e) {

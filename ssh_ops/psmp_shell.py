@@ -59,6 +59,7 @@ class PsmpShell:
         self._sftp = None  # SFTP client (lazy, opened on first file op)
         self._sftp_conn = None  # dedicated SFTP connection
         self._sftp_params = None  # (host, port, user, keep_alive) for lazy SFTP
+        self._sftp_keepalive_task = None  # asyncio task for SFTP keepalive
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=self._loop.run_forever, daemon=True
@@ -341,6 +342,9 @@ class PsmpShell:
     def _close_sftp(self):
         """Clean up dead SFTP connection so it can be re-initialized."""
         logger.warning("PSMP SFTP connection lost — will prompt for OTP on next file op")
+        if self._sftp_keepalive_task:
+            self._sftp_keepalive_task.cancel()
+            self._sftp_keepalive_task = None
         if self._sftp:
             try:
                 self._sftp.exit()
@@ -377,7 +381,24 @@ class PsmpShell:
             keepalive_interval=keep_alive,
         )
         self._sftp = await self._sftp_conn.start_sftp_client()
+        self._sftp_keepalive_task = asyncio.ensure_future(
+            self._sftp_keepalive_loop(keep_alive))
         logger.info("PSMP SFTP channel opened (dedicated connection)")
+
+    async def _sftp_keepalive_loop(self, interval: int) -> None:
+        """Periodically stat('.') to keep SFTP session alive."""
+        try:
+            while self._sftp:
+                await asyncio.sleep(interval)
+                if self._sftp:
+                    try:
+                        await self._sftp.stat('.')
+                        logger.debug("SFTP keepalive: stat('.') OK")
+                    except Exception as e:
+                        logger.warning("SFTP keepalive failed: %s", e)
+                        break
+        except asyncio.CancelledError:
+            pass
 
     def sftp_read_file(self, remote_path: str) -> str:
         """Read a text file via SFTP. Raises on directory or binary."""
@@ -422,6 +443,9 @@ class PsmpShell:
             return False
 
     def close(self):
+        if self._sftp_keepalive_task:
+            self._sftp_keepalive_task.cancel()
+            self._sftp_keepalive_task = None
         if self._sftp:
             try:
                 self._sftp.exit()
