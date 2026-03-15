@@ -880,3 +880,411 @@ class TestSSHSession:
         session = SSHSession(server)
         session.close()
         client.close.assert_called_once()
+
+    # ----- PSMP delegation tests -----
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_has_sftp_direct_paramiko(self, MockSSHClient):
+        """SSHSession.has_sftp returns True for direct paramiko connection (no psmp)."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+        # _psmp is None for direct connections
+        assert session._psmp is None
+        assert session.has_sftp is True
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_has_sftp_delegates_to_psmp(self, MockSSHClient):
+        """SSHSession.has_sftp delegates to _psmp.has_sftp when _psmp is set."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        psmp.has_sftp = True
+        session._psmp = psmp
+
+        assert session.has_sftp is True
+        psmp2 = MagicMock()
+        psmp2.has_sftp = False
+        session._psmp = psmp2
+        assert session.has_sftp is False
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_needs_sftp_otp_false_without_psmp(self, MockSSHClient):
+        """SSHSession.needs_sftp_otp returns False for direct paramiko connection."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+        assert session._psmp is None
+        assert session.needs_sftp_otp is False
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_needs_sftp_otp_delegates_to_psmp(self, MockSSHClient):
+        """SSHSession.needs_sftp_otp returns True when psmp.has_sftp=False and can_sftp=True."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        psmp.has_sftp = False
+        psmp.can_sftp = True
+        session._psmp = psmp
+
+        assert session.needs_sftp_otp is True
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_ensure_sftp_delegates_to_psmp(self, MockSSHClient):
+        """SSHSession.ensure_sftp delegates to _psmp.ensure_sftp(otp)."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        session._psmp = psmp
+
+        session.ensure_sftp("my-otp")
+        psmp.ensure_sftp.assert_called_once_with("my-otp")
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_is_alive_delegates_to_psmp(self, MockSSHClient):
+        """SSHSession.is_alive delegates to _psmp.is_alive() when _psmp is set."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        psmp.is_alive.return_value = True
+        session._psmp = psmp
+
+        assert session.is_alive() is True
+        psmp.is_alive.assert_called_once()
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_is_alive_send_ignore_raises_returns_false(self, MockSSHClient):
+        """SSHSession.is_alive returns False when transport.send_ignore() raises."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        transport = client.get_transport.return_value
+        transport.is_active.return_value = True
+        transport.send_ignore.side_effect = Exception("channel closed")
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+        assert session.is_alive() is False
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_close_delegates_to_psmp(self, MockSSHClient):
+        """SSHSession.close delegates to _psmp.close() when _psmp is set."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        session._psmp = psmp
+
+        session.close()
+        psmp.close.assert_called_once()
+        client.close.assert_not_called()
+
+    # ----- sftp_read_file / sftp_write_file PSMP delegation -----
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_sftp_read_file_delegates_to_psmp(self, MockSSHClient):
+        """sftp_read_file delegates to _psmp.sftp_read_file when _psmp is set."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        psmp.sftp_read_file.return_value = "file content"
+        session._psmp = psmp
+
+        result = session.sftp_read_file("/remote/file.txt")
+        assert result == "file content"
+        psmp.sftp_read_file.assert_called_once_with("/remote/file.txt")
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_sftp_write_file_delegates_to_psmp(self, MockSSHClient):
+        """sftp_write_file delegates to _psmp.sftp_write_file when _psmp is set."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        psmp = MagicMock()
+        session._psmp = psmp
+
+        session.sftp_write_file("/remote/file.txt", "new content")
+        psmp.sftp_write_file.assert_called_once_with("/remote/file.txt", "new content")
+
+    # ----- sftp_read_file direct paramiko path -----
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_sftp_read_file_is_directory_raises(self, MockSSHClient):
+        """sftp_read_file raises IsADirectoryError when remote path is a directory."""
+        import stat as stat_mod
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        sftp = MagicMock()
+        stat_result = MagicMock()
+        stat_result.st_mode = stat_mod.S_IFDIR | 0o755
+        sftp.stat.return_value = stat_result
+        client.open_sftp.return_value = sftp
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        with pytest.raises(IsADirectoryError):
+            session.sftp_read_file("/some/dir")
+        sftp.close.assert_called_once()
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_sftp_read_file_binary_raises(self, MockSSHClient):
+        """sftp_read_file raises ValueError for binary content."""
+        import stat as stat_mod
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        sftp = MagicMock()
+        stat_result = MagicMock()
+        stat_result.st_mode = stat_mod.S_IFREG | 0o644
+        sftp.stat.return_value = stat_result
+        file_mock = MagicMock()
+        file_mock.__enter__ = MagicMock(return_value=file_mock)
+        file_mock.__exit__ = MagicMock(return_value=False)
+        file_mock.read.return_value = b"\x00binary\x00data"
+        sftp.open.return_value = file_mock
+        client.open_sftp.return_value = sftp
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        with pytest.raises(ValueError, match="Binary file"):
+            session.sftp_read_file("/some/file.bin")
+        sftp.close.assert_called_once()
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_sftp_read_file_utf8_success(self, MockSSHClient):
+        """sftp_read_file returns decoded UTF-8 text for regular text file."""
+        import stat as stat_mod
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        sftp = MagicMock()
+        stat_result = MagicMock()
+        stat_result.st_mode = stat_mod.S_IFREG | 0o644
+        sftp.stat.return_value = stat_result
+        file_mock = MagicMock()
+        file_mock.__enter__ = MagicMock(return_value=file_mock)
+        file_mock.__exit__ = MagicMock(return_value=False)
+        file_mock.read.return_value = b"hello world\n"
+        sftp.open.return_value = file_mock
+        client.open_sftp.return_value = sftp
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        result = session.sftp_read_file("/some/file.txt")
+        assert result == "hello world\n"
+        sftp.close.assert_called_once()
+
+    # ----- sftp_write_file direct paramiko path -----
+
+    @patch("ssh_ops.executor.paramiko.SSHClient")
+    def test_sftp_write_file_direct(self, MockSSHClient):
+        """sftp_write_file writes UTF-8 encoded content via paramiko SFTP."""
+        client = self._mock_client()
+        MockSSHClient.return_value = client
+
+        sftp = MagicMock()
+        file_mock = MagicMock()
+        file_mock.__enter__ = MagicMock(return_value=file_mock)
+        file_mock.__exit__ = MagicMock(return_value=False)
+        sftp.open.return_value = file_mock
+        client.open_sftp.return_value = sftp
+
+        server = ServerConfig({"host": "10.0.0.1", "password": "p"})
+        session = SSHSession(server)
+
+        session.sftp_write_file("/remote/file.txt", "content here")
+        sftp.open.assert_called_once_with("/remote/file.txt", "wb")
+        file_mock.write.assert_called_once_with(b"content here")
+        sftp.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# ConnectionPool.sessions property
+# ---------------------------------------------------------------------------
+
+class TestConnectionPoolSessions:
+    def test_sessions_filters_alive(self):
+        """ConnectionPool.sessions only returns sessions where is_alive() is True."""
+        pool = ConnectionPool()
+
+        alive = FakeSession()
+        dead = FakeSession()
+        dead.is_alive = lambda: False
+
+        pool._sessions["alive_server"] = alive
+        pool._sessions["dead_server"] = dead
+
+        sessions = pool.sessions
+        assert "alive_server" in sessions
+        assert "dead_server" not in sessions
+
+
+# ---------------------------------------------------------------------------
+# _exhaust_generator TypeError guard
+# ---------------------------------------------------------------------------
+
+class TestExhaustGeneratorTypeError:
+    def test_non_generator_raises_type_error(self):
+        """_exhaust_generator raises TypeError for non-generator input."""
+        with pytest.raises(TypeError, match="expected a generator"):
+            _exhaust_generator("not a generator")
+
+    def test_list_raises_type_error(self):
+        """_exhaust_generator raises TypeError for a plain list."""
+        with pytest.raises(TypeError, match="expected a generator"):
+            _exhaust_generator([1, 2, 3])
+
+
+# ---------------------------------------------------------------------------
+# TaskExecutor — auto_backup property and paths
+# ---------------------------------------------------------------------------
+
+class TestTaskExecutorAutoBackup:
+    def setup_method(self):
+        TaskConfig._counter.clear()
+
+    def test_auto_backup_none_when_config_is_none(self, tmp_path):
+        """auto_backup returns None when _config is None."""
+        pool = FakePool()
+        logger = ExecLogger(tmp_path / "logs")
+        executor = TaskExecutor(pool, logger, config=None)
+        assert executor.auto_backup is None
+
+    def test_do_upload_auto_backup_fires_when_enabled(self, tmp_path):
+        """_do_upload fires backup command when auto_backup.enabled and dest not in backup_dir."""
+        from ssh_ops.config import AutoBackupConfig
+
+        local_file = tmp_path / "app.conf"
+        local_file.write_text("config content")
+
+        session = FakeSession(output_lines=[], exit_code=0)
+        pool = FakePool(session)
+        logger = ExecLogger(tmp_path / "logs")
+
+        config_mock = MagicMock()
+        backup_cfg = AutoBackupConfig(enabled=True, backup_dir="/opt/backup")
+        config_mock.auto_backup = backup_cfg
+
+        executor = TaskExecutor(pool, logger, config=config_mock)
+
+        server = _server()
+        task = _task({"src": str(local_file), "dest": "/opt/app/app.conf"})
+        result = executor.run_task(server, task)
+        assert result is True
+        # The backup command should have been executed (cp -a ...) before upload
+        backup_cmds = [cmd for cmd in session.executed if "cp -a" in cmd]
+        assert len(backup_cmds) == 1
+
+    def test_do_upload_auto_backup_skips_when_dest_inside_backup_dir(self, tmp_path):
+        """_do_upload skips backup when dest is inside backup_dir."""
+        from ssh_ops.config import AutoBackupConfig
+
+        local_file = tmp_path / "backup_file.conf"
+        local_file.write_text("backup content")
+
+        session = FakeSession(output_lines=[], exit_code=0)
+        pool = FakePool(session)
+        logger = ExecLogger(tmp_path / "logs")
+
+        config_mock = MagicMock()
+        backup_cfg = AutoBackupConfig(enabled=True, backup_dir="/opt/backup")
+        config_mock.auto_backup = backup_cfg
+
+        executor = TaskExecutor(pool, logger, config=config_mock)
+
+        server = _server()
+        task = _task({"src": str(local_file), "dest": "/opt/backup/backup_file.conf"})
+        result = executor.run_task(server, task)
+        assert result is True
+        # No backup command should have been issued
+        backup_cmds = [cmd for cmd in session.executed if "cp -a" in cmd]
+        assert len(backup_cmds) == 0
+
+    def test_do_command_auto_backup_wraps_command(self, tmp_path):
+        """_do_command calls wrap_backup_command when auto_backup.enabled."""
+        from ssh_ops.config import AutoBackupConfig
+
+        session = FakeSession(output_lines=["done"], exit_code=0)
+        pool = FakePool(session)
+        logger = ExecLogger(tmp_path / "logs")
+
+        config_mock = MagicMock()
+        backup_cfg = AutoBackupConfig(enabled=True, backup_dir="/opt/backup",
+                                      commands=["rm", "mv"])
+        config_mock.auto_backup = backup_cfg
+
+        executor = TaskExecutor(pool, logger, config=config_mock)
+
+        server = _server()
+        task = _task({"command": "echo hello"})
+        result = executor.run_task(server, task)
+        assert result is True
+        # wrap_backup_command is called — for a non-matching command it may return the same cmd
+        assert len(session.executed) == 1
+
+    def test_do_upload_backup_exception_is_swallowed(self, tmp_path):
+        """_do_upload swallows exceptions from the backup command and still uploads."""
+        from ssh_ops.config import AutoBackupConfig
+
+        local_file = tmp_path / "cfg.conf"
+        local_file.write_text("data")
+
+        # Session that raises on exec_command (simulates backup cmd failing)
+        session = FakeSession(output_lines=[], exit_code=0)
+        original_exec = session.exec_command
+
+        def raising_exec(cmd, **kw):
+            if "cp -a" in cmd:
+                raise IOError("sftp error during backup")
+            return original_exec(cmd, **kw)
+
+        session.exec_command = raising_exec
+        pool = FakePool(session)
+        logger = ExecLogger(tmp_path / "logs")
+
+        config_mock = MagicMock()
+        backup_cfg = AutoBackupConfig(enabled=True, backup_dir="/opt/backup")
+        config_mock.auto_backup = backup_cfg
+
+        executor = TaskExecutor(pool, logger, config=config_mock)
+
+        server = _server()
+        task = _task({"src": str(local_file), "dest": "/opt/app/cfg.conf"})
+        # Upload should still succeed even if backup cmd raises
+        result = executor.run_task(server, task)
+        assert result is True
+        assert len(session.uploaded) == 1

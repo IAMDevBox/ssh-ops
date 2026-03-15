@@ -3,20 +3,24 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 import yaml
 
+from ssh_ops.yaml_util import yaml_transaction
 from ssh_ops.config import (
     AppConfig,
     AutoBackupConfig,
+    LogSourceConfig,
     ProxyConfig,
     ServerConfig,
     TaskConfig,
     check_interactive_command,
     is_modifying_command,
     wrap_backup_command,
+    _deep_merge,
+    _load_global_config,
     _parse_server,
     _resolve_env_vars,
     _auto_detect_key,
@@ -809,10 +813,9 @@ def _expect(cd="", sudo="", target="", basename="", work_cmd="", backup_dir="/op
     bak = f"{backup_dir}/{TS}_{basename}"
     return (
         f"{cd}"
-        f"if {s}mkdir -p {backup_dir} && {s}cp -a {target} {bak}; then "
-        f"echo '[backup] {target} -> {backup_dir}'; "
+        f"if {s}mkdir -p {backup_dir} && {s}cp -a {target} {bak} && echo '[backup] {target} -> {backup_dir}'; then "
         f"{work_cmd}; "
-        f"else echo '[WARN] backup failed for {target} — command aborted'; fi"
+        f"else echo '[WARN] backup failed — command aborted'; exit 1; fi"
     )
 
 
@@ -1006,3 +1009,412 @@ class TestWrapBackupCommand:
     def test_rm_outside_backup_dir_still_backed_up(self):
         result = wrap_backup_command("rm /opt/other/file", _cfg())
         assert "cp -a" in result
+
+
+# ---------------------------------------------------------------------------
+# _deep_merge — recursive nested dict merge (L142)
+# ---------------------------------------------------------------------------
+
+class TestDeepMerge:
+    def test_recursive_nested_merge(self):
+        """Both sides have nested dicts under same key — should deep-merge."""
+        base = {"a": {"x": 1, "y": 2}, "b": "base_b"}
+        override = {"a": {"y": 99, "z": 3}, "c": "override_c"}
+        result = _deep_merge(base, override)
+        assert result["a"] == {"x": 1, "y": 99, "z": 3}
+        assert result["b"] == "base_b"
+        assert result["c"] == "override_c"
+
+    def test_non_dict_override_wins(self):
+        """When override value is not a dict, it replaces base value."""
+        base = {"a": {"x": 1}}
+        override = {"a": "scalar"}
+        result = _deep_merge(base, override)
+        assert result["a"] == "scalar"
+
+    def test_base_non_dict_replaced(self):
+        """When base value is not a dict but override is, override wins."""
+        base = {"a": "scalar"}
+        override = {"a": {"x": 1}}
+        result = _deep_merge(base, override)
+        assert result["a"] == {"x": 1}
+
+
+# ---------------------------------------------------------------------------
+# _load_global_config — when GLOBAL_CONFIG exists (L150-154)
+# ---------------------------------------------------------------------------
+
+class TestLoadGlobalConfig:
+    def test_returns_empty_when_file_missing(self, tmp_path):
+        """When GLOBAL_CONFIG does not exist, returns {}."""
+        with patch("ssh_ops.config.GLOBAL_CONFIG", tmp_path / "nonexistent.yml"):
+            # Must call the real function, bypassing conftest patch
+            result = _load_global_config()
+        assert result == {}
+
+    def test_reads_and_resolves_when_exists(self, tmp_path, monkeypatch):
+        """When GLOBAL_CONFIG exists, reads and resolves env vars."""
+        monkeypatch.setenv("GLOBAL_HOST", "10.99.99.99")
+        global_yml = tmp_path / "global.yml"
+        global_yml.write_text("settings:\n  web_host: $GLOBAL_HOST\n", encoding="utf-8")
+        with patch("ssh_ops.config.GLOBAL_CONFIG", global_yml):
+            result = _load_global_config()
+        assert result["settings"]["web_host"] == "10.99.99.99"
+
+
+# ---------------------------------------------------------------------------
+# wrap_backup_command — disabled returns unchanged (L211)
+# ---------------------------------------------------------------------------
+
+class TestWrapBackupDisabled:
+    def test_disabled_cfg_returns_command_unchanged(self):
+        """When cfg.enabled=False, command is returned unchanged (L211 path also via empty-work)."""
+        cfg = AutoBackupConfig(enabled=False)
+        assert wrap_backup_command("rm /tmp/file", cfg) == "rm /tmp/file"
+
+    def test_cd_prefix_eats_whole_command_returns_unchanged(self):
+        """cd prefix extracts entire command leaving empty work_cmd → L211 returns unchanged."""
+        # "cd /x && " — regex matches "cd /x && " and work_cmd becomes ""
+        result = wrap_backup_command("cd /x && ", _cfg())
+        assert result == "cd /x && "
+
+    def test_rm_wildcard_inside_backup_dir_warns(self):
+        """rm /opt/backup/* — target is inside backup_dir, has glob → glob warn path (L288)."""
+        result = wrap_backup_command("rm /opt/backup/*", _cfg())
+        assert "[WARN] auto-backup skipped" in result
+        assert "; rm /opt/backup/*" in result
+
+    def test_rm_mixed_glob_and_real_target_emits_glob_warn(self):
+        """rm with both real target and glob — backup real target but emit glob warning (L288)."""
+        result = wrap_backup_command("rm /tmp/file.txt *.bak", _cfg())
+        # Should have a backup command AND a glob warning (not just skip)
+        assert "[WARN] auto-backup skipped for wildcard targets" in result
+        assert "cp -a /tmp/file.txt" in result
+
+
+# ---------------------------------------------------------------------------
+# ServerConfig — _has_explicit_credentials with key_file (L376)
+# ---------------------------------------------------------------------------
+
+class TestServerConfigCredentials:
+    def test_has_explicit_credentials_with_key_file(self):
+        """_has_explicit_credentials is True when key_file is provided."""
+        s = ServerConfig({"host": "10.0.0.1", "key_file": "/home/user/.ssh/id_rsa"})
+        assert s._has_explicit_credentials is True
+        assert s.key_file == "/home/user/.ssh/id_rsa"
+
+    def test_no_explicit_credentials_without_password_or_key(self):
+        """_has_explicit_credentials is False when neither password nor key_file provided."""
+        with patch("ssh_ops.config._auto_detect_key", return_value=None):
+            s = ServerConfig({"host": "10.0.0.1"})
+        assert s._has_explicit_credentials is False
+
+    def test_needs_otp_with_otp_proxy(self):
+        """needs_otp returns True when proxy auth is otp (L376)."""
+        proxy = ProxyConfig({"host": "psmp.corp.com", "user": "jdoe", "account": "admin", "auth": "otp"})
+        s = ServerConfig({"host": "10.0.0.1"}, proxy=proxy)
+        assert s.needs_otp is True
+
+    def test_needs_otp_false_without_proxy(self):
+        """needs_otp returns False when no proxy."""
+        with patch("ssh_ops.config._auto_detect_key", return_value=None):
+            s = ServerConfig({"host": "10.0.0.1"})
+        assert s.needs_otp is False
+
+    def test_needs_otp_false_with_password_proxy(self):
+        """needs_otp returns False when proxy auth is not otp."""
+        proxy = ProxyConfig({"host": "psmp.corp.com", "user": "jdoe", "account": "admin", "auth": "password"})
+        s = ServerConfig({"host": "10.0.0.1"}, proxy=proxy)
+        assert s.needs_otp is False
+
+
+# ---------------------------------------------------------------------------
+# LogSourceConfig — validation and methods (L490-504)
+# ---------------------------------------------------------------------------
+
+class TestLogSourceConfig:
+    def test_missing_name_raises(self):
+        with pytest.raises(ValueError, match="missing 'name'"):
+            LogSourceConfig({"path": "/var/log/app.log"})
+
+    def test_missing_path_raises(self):
+        with pytest.raises(ValueError, match="missing 'path'"):
+            LogSourceConfig({"name": "app"})
+
+    def test_non_absolute_path_raises(self):
+        with pytest.raises(ValueError, match="path must be absolute"):
+            LogSourceConfig({"name": "app", "path": "relative/log.log"})
+
+    def test_valid_log_source(self):
+        ls = LogSourceConfig({"name": "app", "path": "/var/log/app.log", "type": "syslog"})
+        assert ls.name == "app"
+        assert ls.path == "/var/log/app.log"
+        assert ls.type == "syslog"
+
+    def test_to_dict(self):
+        ls = LogSourceConfig({"name": "app", "path": "/var/log/app.log"})
+        d = ls.to_dict()
+        assert d == {"name": "app", "path": "/var/log/app.log", "type": "generic"}
+
+    def test_repr(self):
+        ls = LogSourceConfig({"name": "app", "path": "/var/log/app.log"})
+        r = repr(ls)
+        assert "LogSource" in r
+        assert "app" in r
+        assert "/var/log/app.log" in r
+
+
+# ---------------------------------------------------------------------------
+# AppConfig._save_last_config — writes when config in config dir (L529)
+# ---------------------------------------------------------------------------
+
+class TestSaveLastConfigWrites:
+    def test_saves_when_config_in_config_dir(self, tmp_path):
+        """_save_last_config should write the file when config is in _CONFIG_DIR."""
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        last_file = config_dir / ".last_config"
+        cfg_path = config_dir / "myenv.yml"
+        cfg_path.write_text("servers: []\n")
+        with patch("ssh_ops.config._CONFIG_DIR", config_dir), \
+             patch("ssh_ops.config._LAST_CONFIG_FILE", last_file):
+            AppConfig._save_last_config(cfg_path)
+        assert last_file.exists()
+        assert last_file.read_text(encoding="utf-8").strip() == str(cfg_path)
+
+
+# ---------------------------------------------------------------------------
+# AppConfig.__init__ with master_password — triggers _auto_encrypt_and_decrypt (L551)
+# AppConfig._auto_encrypt_and_decrypt (L557-571)
+# ---------------------------------------------------------------------------
+
+class TestAutoEncryptAndDecrypt:
+    def test_init_with_master_password_calls_auto_encrypt(self, tmp_path):
+        """__init__ with master_password should call _auto_encrypt_and_decrypt."""
+        cfg_path = tmp_path / "test.yml"
+        cfg_path.write_text("servers: []\ntasks: []\n", encoding="utf-8")
+        with patch.object(AppConfig, "_auto_encrypt_and_decrypt") as mock_aed:
+            # Still need _load to work so we don't crash
+            mock_aed.side_effect = lambda: None
+            config = AppConfig.__new__(AppConfig)
+            config.config_path = cfg_path.resolve()
+            config._master_password = "secret"
+            with patch("ssh_ops.config._load_global_config", return_value={}):
+                import yaml as _yaml
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    env_raw = _yaml.safe_load(f) or {}
+                from ssh_ops.config import _resolve_deep, _deep_merge, _load_global_config as _lgc
+                raw = _deep_merge({}, env_raw)
+                config._load(raw)
+            mock_aed.assert_not_called()  # we called _load manually
+
+    def test_auto_encrypt_and_decrypt_encrypts_and_loads(self, tmp_path):
+        """_auto_encrypt_and_decrypt: encrypts plaintext passwords, then loads decrypted config."""
+        cfg_path = tmp_path / "test.yml"
+        cfg_path.write_text("servers:\n  - host: 10.0.0.1\n    password: plaintext\ntasks: []\n", encoding="utf-8")
+
+        fake_salt = b"saltsaltsaltsalt"
+        encrypted_text = "servers:\n  - host: 10.0.0.1\n    password: ENC[abc123]\ntasks: []\n"
+        decrypted_config = {"servers": [{"host": "10.0.0.1", "password": "plaintext"}], "tasks": []}
+
+        with patch("ssh_ops.config._load_global_config", return_value={}), \
+             patch("ssh_ops.crypto._get_salt", return_value=fake_salt), \
+             patch("ssh_ops.crypto.encrypt_passwords_in_yaml", return_value=encrypted_text) as mock_enc, \
+             patch("ssh_ops.crypto.decrypt_passwords_in_config", return_value=decrypted_config) as mock_dec:
+            config = AppConfig(cfg_path, master_password="secret")
+
+        mock_enc.assert_called_once()
+        mock_dec.assert_called_once()
+        # encrypted_text != original text, so file should have been written
+        written = cfg_path.read_text(encoding="utf-8")
+        assert written == encrypted_text
+        assert config.servers[0].host == "10.0.0.1"
+
+    def test_auto_encrypt_no_change_skips_write(self, tmp_path):
+        """When encrypted_text == raw_text, file is NOT rewritten."""
+        cfg_path = tmp_path / "test.yml"
+        original_text = "servers: []\ntasks: []\n"
+        cfg_path.write_text(original_text, encoding="utf-8")
+
+        fake_salt = b"saltsaltsaltsalt"
+        decrypted_config = {"servers": [], "tasks": []}
+
+        with patch("ssh_ops.config._load_global_config", return_value={}), \
+             patch("ssh_ops.crypto._get_salt", return_value=fake_salt), \
+             patch("ssh_ops.crypto.encrypt_passwords_in_yaml", return_value=original_text), \
+             patch("ssh_ops.crypto.decrypt_passwords_in_config", return_value=decrypted_config):
+            config = AppConfig(cfg_path, master_password="secret")
+
+        # File content should remain unchanged
+        assert cfg_path.read_text(encoding="utf-8") == original_text
+
+    def test_reload_with_master_password_calls_auto_encrypt(self, tmp_path):
+        """reload() with master_password set should call _auto_encrypt_and_decrypt."""
+        cfg_path = tmp_path / "test.yml"
+        cfg_path.write_text("servers: []\ntasks: []\n", encoding="utf-8")
+        fake_salt = b"saltsaltsaltsalt"
+        decrypted_config = {"servers": [], "tasks": []}
+
+        with patch("ssh_ops.config._load_global_config", return_value={}), \
+             patch("ssh_ops.crypto._get_salt", return_value=fake_salt), \
+             patch("ssh_ops.crypto.encrypt_passwords_in_yaml", return_value="servers: []\ntasks: []\n"), \
+             patch("ssh_ops.crypto.decrypt_passwords_in_config", return_value=decrypted_config):
+            config = AppConfig(cfg_path, master_password="secret")
+
+            with patch.object(config, "_auto_encrypt_and_decrypt") as mock_aed:
+                config.reload()
+                mock_aed.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# AppConfig._load — server_warn_patterns (L595) and aliases (L614-616)
+# ---------------------------------------------------------------------------
+
+class TestAppConfigLoad:
+    def test_server_warn_patterns_loaded(self, tmp_path):
+        """Valid server_warn_patterns in safety section are loaded."""
+        data = {
+            "servers": [],
+            "tasks": [],
+            "safety": {
+                "server_warn_patterns": [
+                    {"pattern": "prod*", "label": "PROD", "color": "#ff0000"},
+                ]
+            },
+        }
+        cfg_path = _write_config(tmp_path, data)
+        config = AppConfig(cfg_path)
+        assert len(config.server_warn_patterns) == 1
+        assert config.server_warn_patterns[0].pattern == "prod*"
+        assert config.server_warn_patterns[0].label == "PROD"
+
+    def test_server_warn_pattern_empty_pattern_skipped(self, tmp_path):
+        """Entries with empty pattern are skipped."""
+        data = {
+            "servers": [],
+            "tasks": [],
+            "safety": {
+                "server_warn_patterns": [
+                    {"pattern": "", "label": "WARN"},
+                    {"pattern": "prod*", "label": "PROD"},
+                ]
+            },
+        }
+        cfg_path = _write_config(tmp_path, data)
+        config = AppConfig(cfg_path)
+        assert len(config.server_warn_patterns) == 1
+        assert config.server_warn_patterns[0].pattern == "prod*"
+
+    def test_aliases_loaded(self, tmp_path):
+        """aliases section is parsed into config.aliases dict."""
+        data = {
+            "servers": [],
+            "tasks": [],
+            "aliases": {
+                "status": "systemctl status nginx",
+                "logs": "journalctl -u nginx -n 50",
+            },
+        }
+        cfg_path = _write_config(tmp_path, data)
+        config = AppConfig(cfg_path)
+        assert config.aliases["status"] == "systemctl status nginx"
+        assert config.aliases["logs"] == "journalctl -u nginx -n 50"
+
+    def test_aliases_empty_by_default(self, tmp_path):
+        """When no aliases section, config.aliases is empty."""
+        data = {"servers": [], "tasks": []}
+        cfg_path = _write_config(tmp_path, data)
+        config = AppConfig(cfg_path)
+        assert config.aliases == {}
+
+
+# ---------------------------------------------------------------------------
+# AppConfig.get_server_warn (L677-688)
+# ---------------------------------------------------------------------------
+
+class TestGetServerWarn:
+    def _make_config_with_patterns(self, tmp_path):
+        data = {
+            "servers": [],
+            "tasks": [],
+            "safety": {
+                "server_warn_patterns": [
+                    {"pattern": "prod*", "label": "PROD", "color": "#ff0000"},
+                    {"pattern": "*.prod.*", "label": "PROD-HOST", "color": "#cc0000"},
+                ]
+            },
+        }
+        cfg_path = _write_config(tmp_path, data)
+        return AppConfig(cfg_path)
+
+    def test_matches_by_server_name(self, tmp_path):
+        config = self._make_config_with_patterns(tmp_path)
+        result = config.get_server_warn("prod-web1")
+        assert result is not None
+        assert result["label"] == "PROD"
+
+    def test_matches_by_host(self, tmp_path):
+        config = self._make_config_with_patterns(tmp_path)
+        result = config.get_server_warn("someserver", host="app.prod.example.com")
+        assert result is not None
+        assert result["label"] == "PROD-HOST"
+
+    def test_no_match_returns_none(self, tmp_path):
+        config = self._make_config_with_patterns(tmp_path)
+        result = config.get_server_warn("dev-web1", host="dev.example.com")
+        assert result is None
+
+    def test_case_insensitive_match(self, tmp_path):
+        config = self._make_config_with_patterns(tmp_path)
+        result = config.get_server_warn("PROD-DB")
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# AppConfig.get_safety_settings (L688)
+# ---------------------------------------------------------------------------
+
+class TestGetSafetySettings:
+    def test_get_safety_settings_structure(self, tmp_path):
+        """get_safety_settings returns a dict with expected keys."""
+        data = {
+            "servers": [],
+            "tasks": [],
+            "safety": {
+                "server_warn_patterns": [
+                    {"pattern": "prod*", "label": "PROD", "color": "#ff0000"}
+                ],
+                "auto_backup": {"enabled": True, "backup_dir": "/bak", "commands": ["rm"]},
+                "dest_check": {"enabled": False, "commands": ["cp"]},
+                "disabled_plugins": ["interactive_check"],
+            },
+        }
+        cfg_path = _write_config(tmp_path, data)
+        config = AppConfig(cfg_path)
+        result = config.get_safety_settings()
+        assert "server_warn_patterns" in result
+        assert result["server_warn_patterns"][0]["pattern"] == "prod*"
+        assert result["auto_backup"]["enabled"] is True
+        assert result["auto_backup"]["backup_dir"] == "/bak"
+        assert result["dest_check"]["enabled"] is False
+        assert result["disabled_plugins"] == ["interactive_check"]
+
+
+# ---------------------------------------------------------------------------
+# yaml_transaction — None/empty file branch (line 59-60 of yaml_util.py)
+# ---------------------------------------------------------------------------
+
+class TestYamlTransaction:
+    def test_yaml_transaction_empty_file_loads_as_none(self, tmp_path):
+        """yaml_transaction should treat an empty (None-loading) YAML file as {}."""
+        empty_yaml = tmp_path / "empty.yml"
+        empty_yaml.write_text("", encoding="utf-8")
+
+        with yaml_transaction(empty_yaml) as raw:
+            # raw should be a dict (not None), so we can safely assign
+            raw["inserted"] = "value"
+
+        # Verify the file was written with the new key
+        content = empty_yaml.read_text(encoding="utf-8")
+        assert "inserted" in content
+        assert "value" in content

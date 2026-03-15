@@ -1,12 +1,14 @@
 """Tests for the log analyzer framework and all domain-specific analyzers."""
 
 import json
+import sys
 import pytest
 import yaml
 
 from ssh_ops.analyzers import (
     Finding, LogAnalyzer, analyze_log, get_analyzers, load_knowledge,
     match_patterns, aggregate_top_errors, register,
+    group_stack_traces, extract_root_cause, discover_analyzers,
 )
 from ssh_ops.analyzers.generic import GenericAnalyzer
 from ssh_ops.analyzers.ping_gateway import PingGatewayAnalyzer
@@ -109,6 +111,151 @@ class TestFramework:
         result = analyze_log("unknown-type-xyz", ["ERROR: test"])
         assert result["errors"] >= 1
 
+    def test_base_class_can_analyze_returns_false(self):
+        # L47: base LogAnalyzer.can_analyze returns False
+        base = LogAnalyzer()
+        assert base.can_analyze("generic", []) is False
+
+    def test_base_class_analyze_returns_empty(self):
+        # L63: base LogAnalyzer.analyze returns empty dict structure
+        base = LogAnalyzer()
+        result = base.analyze(["line1", "line2"])
+        assert result["total_lines"] == 2
+        assert result["errors"] == 0
+        assert result["warnings"] == 0
+        assert result["top_errors"] == []
+        assert result["findings"] == []
+
+    def test_load_knowledge_malformed_yaml(self, tmp_path, monkeypatch):
+        # L84-86: exception path when YAML is malformed
+        import ssh_ops.analyzers as analyzers_mod
+        bad_yaml_path = tmp_path / "bad.yml"
+        bad_yaml_path.write_text("patterns: [invalid: yaml: :\n  - broken", encoding="utf-8")
+        original_dir = analyzers_mod._KNOWLEDGE_DIR
+        monkeypatch.setattr(analyzers_mod, "_KNOWLEDGE_DIR", tmp_path)
+        result = analyzers_mod.load_knowledge("bad")
+        monkeypatch.setattr(analyzers_mod, "_KNOWLEDGE_DIR", original_dir)
+        assert result == []
+
+    def test_group_stack_traces_caused_by_with_frames(self):
+        # L163-168: flush with Caused by + frames, second Caused by resets root_cause
+        lines = [
+            "java.lang.RuntimeException: outer error",
+            "  at com.example.A.foo(A.java:10)",
+            "Caused by: java.io.IOException: inner error",
+            "  at com.example.B.bar(B.java:20)",
+            "Caused by: java.net.SocketException: connection reset",
+            "  at com.example.C.baz(C.java:30)",
+            "INFO normal line",
+        ]
+        result = group_stack_traces(lines)
+        # Should produce a merged line for the exception and the normal line
+        assert len(result) == 2
+        merged = result[0]
+        # Second Caused by should be the root_cause (last one wins)
+        assert "connection reset" in merged
+        assert "at com.example.C.baz" in merged
+
+    def test_group_stack_traces_flush_only_frames(self):
+        # L170: flush with frames but no Caused by
+        lines = [
+            "java.lang.NullPointerException: null ref",
+            "  at com.example.X.method(X.java:5)",
+            "  at com.example.Y.call(Y.java:15)",
+            "INFO done",
+        ]
+        result = group_stack_traces(lines)
+        assert len(result) == 2
+        merged = result[0]
+        assert "NullPointerException" in merged
+        assert "at com.example.X.method" in merged
+        # No Caused by present
+        assert "Caused by" not in merged
+
+    def test_group_stack_traces_flush_root_cause_no_frames(self):
+        # L172: flush with root_cause but no at-frames after Caused by
+        lines = [
+            "java.lang.Exception: outer",
+            "Caused by: java.io.IOException: disk full",
+            "INFO next line",
+        ]
+        result = group_stack_traces(lines)
+        assert len(result) == 2
+        merged = result[0]
+        assert "Caused by" in merged
+        assert "disk full" in merged
+
+    def test_group_stack_traces_orphan_trace_line(self):
+        # L178-182: orphan stack line (matches _TRACE_LINE_RE but current_block is empty)
+        lines = [
+            "  at com.example.OrphanFrame(Orphan.java:99)",
+            "INFO normal",
+        ]
+        result = group_stack_traces(lines)
+        # Orphan line kept as-is, plus normal line
+        assert len(result) == 2
+        assert "OrphanFrame" in result[0]
+        assert "INFO normal" in result[1]
+
+    def test_extract_root_cause_with_caused_by(self):
+        # L202-207: extract_root_cause finds the last Caused by segment
+        merged = "java.lang.RuntimeException: outer | Caused by: java.io.IOException: disk full | at com.example.A.foo(A.java:10)"
+        result = extract_root_cause(merged)
+        assert result.startswith("Caused by")
+        assert "disk full" in result
+
+    def test_extract_root_cause_no_caused_by(self):
+        # L208-209: no Caused by — returns first part
+        merged = "java.lang.NullPointerException: null ref | at com.example.X.m(X.java:5)"
+        result = extract_root_cause(merged)
+        assert result == "java.lang.NullPointerException: null ref"
+
+    def test_analyze_log_specific_analyzer_claims(self):
+        # L236: a specific analyzer claims the log type
+        lines = [
+            '{"timestamp":"2026-03-13 10:00:00","level":"ERROR","thread":"t1","mdc":{},"logger":"org.forgerock.openam.auth","message":"Login failed"}',
+        ]
+        result = analyze_log("ping-am", lines)
+        assert result["errors"] == 1
+
+    def test_analyze_log_no_analyzers_fallback(self, monkeypatch):
+        # L242: no analyzers at all registered → returns fallback dict
+        import ssh_ops.analyzers as analyzers_mod
+        original = analyzers_mod._analyzers[:]
+        analyzers_mod._analyzers.clear()
+        try:
+            result = analyzers_mod.analyze_log("unknown", ["ERROR: test"])
+            assert result["summary"] == "No analyzer available"
+            assert result["total_lines"] == 1
+        finally:
+            analyzers_mod._analyzers[:] = original
+
+    def test_discover_analyzers_import_error(self, monkeypatch, caplog):
+        # L252, 255-256: import error path in discover_analyzers;
+        # also exercises L252 (continue for _-prefixed names)
+        import pkgutil
+        import logging
+
+        def fake_iter_modules(path):
+            yield (None, "_private_module", False)   # should be skipped (L252 continue)
+            yield (None, "bad_module_xyz", False)    # should fail import
+
+        monkeypatch.setattr(pkgutil, "iter_modules", fake_iter_modules)
+        import importlib
+        original_import = importlib.import_module
+
+        def failing_import(name):
+            if "bad_module_xyz" in name:
+                raise ImportError("simulated import failure")
+            return original_import(name)
+
+        monkeypatch.setattr(importlib, "import_module", failing_import)
+
+        with caplog.at_level(logging.WARNING, logger="ssh_ops.analyzers"):
+            discover_analyzers()
+
+        assert any("bad_module_xyz" in r.message for r in caplog.records)
+
 
 # ── Generic Analyzer ─────────────────────────────────────────
 
@@ -159,6 +306,24 @@ class TestGenericAnalyzer:
         lines = ["ERROR: x", "WARN: y"]
         result = self.analyzer.analyze(lines)
         assert "2 lines" in result["summary"]
+
+    def test_blank_lines_skipped(self):
+        # L50: blank lines in input are skipped
+        lines = ["", "   ", "ERROR: something broke", ""]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+        assert result["total_lines"] == 4
+
+    def test_long_error_message_truncated(self):
+        # L62: error message > 200 chars gets truncated with "..."
+        long_msg = "A" * 250
+        lines = [f"ERROR: {long_msg}"]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+        top = result["top_errors"]
+        assert len(top) == 1
+        assert top[0]["pattern"].endswith("...")
+        assert len(top[0]["pattern"]) <= 204  # 200 + "..."
 
 
 # ── PingGateway Analyzer ─────────────────────────────────────
@@ -221,6 +386,27 @@ class TestPingGatewayAnalyzer:
         lines = [self._ig_line("ERROR", "myroute", "fail")]
         result = self.analyzer.analyze(lines)
         assert "myroute" in result["summary"]
+
+    def test_blank_lines_skipped_in_analyze(self):
+        # L62: blank lines skipped during analysis
+        lines = ["", "   ", self._ig_line("ERROR", "route1", "failed"), ""]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+        assert result["total_lines"] == 4
+
+    def test_warning_increments_warnings_counter(self):
+        # L90-91: WARNING match increments warnings counter in by_category when knowledge pattern matches
+        # "URI Too Long" is a warning-level knowledge pattern
+        lines = [
+            self._ig_line("WARN", "route1", "URI Too Long — request rejected"),
+            self._ig_line("WARNING", "route2", "HTTP 503 Service Unavailable from backend"),
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["warnings"] == 2
+        assert result["by_route"]["route1"]["warnings"] == 1
+        assert result["by_route"]["route2"]["warnings"] == 1
+        # by_category should have warning counts from knowledge pattern matches
+        assert any(v.get("warnings", 0) > 0 for v in result["by_category"].values())
 
 
 # ── PingAM Analyzer ──────────────────────────────────────────
@@ -290,6 +476,63 @@ class TestPingAMAnalyzer:
         result = self.analyzer.analyze(lines)
         assert result["errors"] == 0
 
+    def test_can_analyze_skips_blank_lines_in_sample(self):
+        # L68: blank lines in sample skipped during can_analyze
+        lines = ["", "   ", self._json_line("INFO", "authentication", "Startup")]
+        # Should still detect as ping-am due to openam logger
+        assert self.analyzer.can_analyze("", lines)
+
+    def test_can_analyze_invalid_json_line(self):
+        # L75-76: invalid JSON line (JSONDecodeError caught), does not crash
+        lines = ["{not valid json at all", self._json_line("ERROR", "core", "boot")]
+        # Invalid JSON is skipped; valid line has openam logger → returns True
+        assert self.analyzer.can_analyze("", lines)
+
+    def test_can_analyze_invalid_json_only(self):
+        # L75-76: only invalid JSON, no legacy either → False
+        lines = ["{bad json}", "{also bad}"]
+        assert not self.analyzer.can_analyze("", lines)
+
+    def test_json_analysis_non_json_line_skipped(self):
+        # L108: non-JSON line (doesn't start with '{') during JSON analysis is skipped
+        lines = [
+            self._json_line("ERROR", "authentication", "Login failed"),
+            "plain text line mixed in",
+            self._json_line("INFO", "core", "ok"),
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+
+    def test_json_malformed_line_during_analysis_skipped(self):
+        # L111: malformed JSON line (starts with '{' but invalid) is caught and skipped
+        lines = [
+            self._json_line("ERROR", "authentication", "Login failed"),
+            "{this is not valid json}",
+            self._json_line("INFO", "core", "ok"),
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+
+    def test_text_format_blank_lines_skipped(self):
+        # L160: blank lines in text analysis are skipped (continue)
+        lines = [
+            "amAuthentication:03/13/2026 10:15:32:456 AM EDT: Thread[http-exec-1,5,main]",
+            "",
+            "   ",
+            "ERROR: Login failed",
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] >= 1
+
+    def test_text_format_warning_line(self):
+        # L160: WARNING-level line in text format increments warnings
+        lines = [
+            "amAuthentication:03/13/2026 10:15:32:456 AM EDT: Thread[http-exec-1,5,main]",
+            "WARNING: Session cookie is expiring soon",
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["warnings"] >= 1
+
 
 # ── PingDS Analyzer ──────────────────────────────────────────
 
@@ -354,6 +597,25 @@ class TestPingDSAnalyzer:
         lines = ["random text without DS format"]
         result = self.analyzer.analyze(lines)
         assert result["errors"] == 0
+
+    def test_non_matching_line_mixed_with_valid(self):
+        # L84-85: non-matching line skipped (continues to next line)
+        lines = [
+            "this does not match the DS format at all",
+            self._ds_line("CORE", "ERROR", "100", "Disk space low"),
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+
+    def test_blank_lines_skipped_in_analyze(self):
+        # L81: blank lines skipped in analyze loop
+        lines = [
+            "",
+            "   ",
+            self._ds_line("CORE", "ERROR", "100", "Disk space low"),
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
 
 
 # ── PingIDM Analyzer ─────────────────────────────────────────
@@ -427,6 +689,54 @@ class TestPingIDMAnalyzer:
         ]
         result = self.analyzer.analyze(lines)
         assert "sync" in result["summary"]
+
+    def test_classify_logger_unknown_category(self):
+        # L60: logger name not matching any category → "other"
+        from ssh_ops.analyzers.ping_idm import _classify_logger
+        result = _classify_logger("org.forgerock.openidm.completely.unknown.logger")
+        assert result == "other"
+
+    def test_can_analyze_skips_blank_lines_in_sample(self):
+        # L77: blank lines in sample are skipped during can_analyze
+        lines = ["", "   ", self._json_line("INFO", "sync.impl.ReconciliationService", "ok")]
+        assert self.analyzer.can_analyze("", lines)
+
+    def test_can_analyze_invalid_json_in_sample(self):
+        # L84-85: invalid JSON in sample is caught, doesn't crash
+        lines = ["{bad json}", self._json_line("ERROR", "sync", "Recon failed")]
+        assert self.analyzer.can_analyze("", lines)
+
+    def test_can_analyze_invalid_json_only(self):
+        # L84-85: only invalid JSON, no match → False
+        lines = ["{bad json}", "{another bad line}"]
+        assert not self.analyzer.can_analyze("", lines)
+
+    def test_can_analyze_legacy_format_detection(self):
+        # L88: legacy format detection (line contains "openidm" and matches _LEGACY_HEADER_RE)
+        legacy_header = "[19] Mar 13, 2026 10:15:32.456 AM org.forgerock.openidm.sync.impl.ReconciliationService reconcile"
+        assert self.analyzer.can_analyze("", [legacy_header])
+
+    def test_text_format_blank_lines_skipped(self):
+        # L169: blank lines in text analysis are skipped
+        lines = [
+            "[19] Mar 13, 2026 10:15:32.456 AM org.forgerock.openidm.sync.impl.ReconciliationService reconcile",
+            "",
+            "   ",
+            "SEVERE: Reconciliation failed",
+        ]
+        result = self.analyzer.analyze(lines)
+        assert result["errors"] == 1
+
+    def test_text_format_line_not_matching_level_re(self):
+        # L184-185: line not matching _LEVEL_LINE_RE → message = stripped, level = ""
+        lines = [
+            "[19] Mar 13, 2026 10:15:32.456 AM org.forgerock.openidm.sync.impl.ReconciliationService reconcile",
+            "This is a plain message with no level prefix",
+        ]
+        result = self.analyzer.analyze(lines)
+        # Plain message has no level, should not count as error or warning
+        assert result["errors"] == 0
+        assert result["warnings"] == 0
 
 
 # ── API Endpoints ────────────────────────────────────────────

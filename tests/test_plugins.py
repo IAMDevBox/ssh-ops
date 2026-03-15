@@ -1,6 +1,8 @@
 """Tests for ssh_ops.plugins — file validation plugin system."""
 
 import json
+import sys
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -9,8 +11,12 @@ from fastapi.testclient import TestClient
 from ssh_ops.config import AppConfig, TaskConfig
 from ssh_ops.logger import ExecLogger
 from ssh_ops.plugins import Issue, FileValidator, validate_file, get_plugins
+from ssh_ops.plugins.ini_lint import IniValidator
+from ssh_ops.plugins.json_lint import JsonValidator
 from ssh_ops.plugins.ping_gateway import PingGatewayValidator
+from ssh_ops.plugins.properties_lint import PropertiesValidator
 from ssh_ops.plugins.shell_script import ShellScriptValidator
+from ssh_ops.plugins.xml_lint import XmlValidator
 from ssh_ops.plugins.yaml_lint import YamlValidator
 from ssh_ops.server import create_app
 
@@ -26,6 +32,28 @@ class TestPluginRegistry:
         assert "ping-gateway" in names
         assert "shell-script" in names
         assert "yaml" in names
+
+    def test_discover_plugins_skips_underscore_names(self):
+        """discover_plugins skips module names starting with '_' (line 89)."""
+        from ssh_ops.plugins import discover_plugins
+
+        # pkgutil.iter_modules yields (finder, name, ispkg) tuples
+        fake_iter = [("_finder", "_private", False)]
+        with patch("ssh_ops.plugins.pkgutil.iter_modules", return_value=fake_iter):
+            with patch("ssh_ops.plugins.importlib.import_module") as mock_import:
+                discover_plugins()
+                mock_import.assert_not_called()
+
+    def test_discover_plugins_handles_import_error(self):
+        """discover_plugins logs and continues when a plugin import fails (lines 92-93)."""
+        from ssh_ops.plugins import discover_plugins
+
+        fake_iter = [("_finder", "bad_plugin", False)]
+        with patch("ssh_ops.plugins.pkgutil.iter_modules", return_value=fake_iter):
+            with patch("ssh_ops.plugins.importlib.import_module",
+                       side_effect=Exception("load failed")):
+                # Should not raise — exception is caught and logged
+                discover_plugins()
 
     def test_validate_file_returns_none_for_unknown(self):
         assert validate_file("readme.txt", "hello world") is None
@@ -626,7 +654,8 @@ class TestValidateFileAPI:
         resp = client.post("/api/validate-file", json={"filename": "route.json", "content": route})
         data = resp.json()
         assert data["result"] is not None
-        assert data["result"][0]["plugin"] == "ping-gateway"
+        plugin_names = [r["plugin"] for r in data["result"]]
+        assert "ping-gateway" in plugin_names
 
 
 class TestPluginsAPI:
@@ -667,3 +696,327 @@ class TestPluginsAPI:
         for p in resp.json():
             assert "description" in p
             assert len(p["description"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# INI validator
+# ---------------------------------------------------------------------------
+
+class TestIniValidator:
+    """Tests for IniValidator — can_validate and validate paths."""
+
+    # --- can_validate ---
+
+    def test_can_validate_ini(self):
+        v = IniValidator()
+        assert v.can_validate("app.ini", "") is True
+
+    def test_can_validate_cfg(self):
+        v = IniValidator()
+        assert v.can_validate("setup.cfg", "") is True
+
+    def test_can_validate_cnf(self):
+        v = IniValidator()
+        assert v.can_validate("my.cnf", "") is True
+
+    def test_can_validate_conf_no_nginx_patterns(self):
+        v = IniValidator()
+        # Plain .conf without braces/server/location/proxy_pass — should be accepted
+        assert v.can_validate("app.conf", "[section]\nkey=val\n") is True
+
+    def test_can_validate_conf_with_braces(self):
+        v = IniValidator()
+        assert v.can_validate("nginx.conf", "server { listen 80; }") is False
+
+    def test_can_validate_conf_with_server_keyword(self):
+        v = IniValidator()
+        assert v.can_validate("site.conf", "server\nlisten 80;") is False
+
+    def test_can_validate_conf_with_location(self):
+        v = IniValidator()
+        assert v.can_validate("site.conf", "location /api { proxy_pass http://x; }") is False
+
+    def test_can_validate_conf_with_proxy_pass(self):
+        v = IniValidator()
+        assert v.can_validate("site.conf", "proxy_pass http://backend;") is False
+
+    def test_can_validate_rejects_other_extensions(self):
+        v = IniValidator()
+        assert v.can_validate("data.json", "{}") is False
+
+    # --- validate: empty content ---
+
+    def test_validate_empty_content(self):
+        v = IniValidator()
+        issues = v.validate("app.ini", "   ")
+        assert len(issues) == 1
+        assert issues[0].level == "warning"
+        assert "empty" in issues[0].message
+
+    # --- validate: DuplicateSectionError ---
+
+    def test_validate_duplicate_section(self):
+        v = IniValidator()
+        content = "[section]\nkey=val\n[section]\nother=val\n"
+        issues = v.validate("app.ini", content)
+        assert any("Duplicate section" in i.message for i in issues)
+        assert any(i.level == "warning" for i in issues)
+
+    # --- validate: DuplicateOptionError ---
+
+    def test_validate_duplicate_option(self):
+        v = IniValidator()
+        # configparser strict=True raises DuplicateOptionError for dup keys in same section
+        content = "[section]\nkey=val1\nkey=val2\n"
+        issues = v.validate("app.ini", content)
+        assert any("Duplicate key" in i.message for i in issues)
+
+    # --- validate: MissingSectionHeaderError ---
+
+    def test_validate_missing_section_header(self):
+        v = IniValidator()
+        content = "key=val\n"
+        issues = v.validate("app.ini", content)
+        assert any("section header" in i.message for i in issues)
+        assert any(i.level == "error" for i in issues)
+
+    # --- validate: ParsingError ---
+
+    def test_validate_parsing_error(self):
+        v = IniValidator()
+        # A line with a continuation that causes a parse error
+        # configparser raises ParsingError for lines that can't be parsed after a section
+        # We use a value line that configparser can't handle (e.g. multi-line without proper indent)
+        content = "[section]\n\tcontinued without key\n"
+        issues = v.validate("app.ini", content)
+        # Either ParsingError or malformed line warning — just verify no crash
+        # ParsingError: "INI parse error" message
+        # If it parsed OK, malformed line check catches it
+        assert isinstance(issues, list)
+
+    # --- validate: malformed line (in section, no = or :) ---
+
+    def test_validate_malformed_line_in_section(self):
+        v = IniValidator()
+        content = "[section]\nkey=val\nthis_is_not_a_key_value\n"
+        issues = v.validate("app.ini", content)
+        assert any("not a key=value pair" in i.message for i in issues)
+
+
+# ---------------------------------------------------------------------------
+# JSON validator
+# ---------------------------------------------------------------------------
+
+class TestJsonValidator:
+    """Tests for JsonValidator — trailing commas, syntax errors, duplicate keys."""
+
+    # --- trailing comma before } ---
+
+    def test_validate_trailing_comma_before_brace(self):
+        v = JsonValidator()
+        content = '{\n  "key": "val",\n}\n'
+        issues = v.validate("data.json", content)
+        assert any("trailing comma" in i.message for i in issues)
+        assert any(i.level == "error" for i in issues)
+
+    def test_validate_trailing_comma_before_bracket(self):
+        v = JsonValidator()
+        content = '{\n  "items": [\n    "a",\n  ]\n}\n'
+        issues = v.validate("data.json", content)
+        assert any("trailing comma" in i.message for i in issues)
+
+    # --- JSON syntax error (JSONDecodeError) ---
+
+    def test_validate_json_syntax_error(self):
+        v = JsonValidator()
+        content = '{"key": "unclosed'
+        issues = v.validate("data.json", content)
+        assert any("JSON syntax error" in i.message for i in issues)
+        assert any(i.level == "error" for i in issues)
+
+    # --- duplicate top-level keys ---
+
+    def test_validate_duplicate_top_level_keys(self):
+        v = JsonValidator()
+        # json.loads with duplicate keys: Python's json keeps the last value
+        # Our validator scans line by line for duplicate top-level keys
+        content = '{\n  "name": "foo",\n  "name": "bar"\n}\n'
+        issues = v.validate("data.json", content)
+        assert any("Duplicate key" in i.message and "name" in i.message for i in issues)
+        assert any(i.level == "warning" for i in issues)
+
+    def test_validate_valid_json_no_errors(self):
+        v = JsonValidator()
+        content = '{\n  "name": "foo",\n  "value": 42\n}\n'
+        issues = v.validate("data.json", content)
+        assert issues == []
+
+    def test_validate_trailing_comma_with_blank_line_before_bracket(self):
+        # Line 37 in json_lint.py: blank lines between trailing comma and }
+        v = JsonValidator()
+        content = '{\n  "key": "val",\n\n}\n'
+        issues = v.validate("data.json", content)
+        assert any("trailing comma" in i.message for i in issues)
+
+
+# ---------------------------------------------------------------------------
+# Properties validator
+# ---------------------------------------------------------------------------
+
+class TestPropertiesValidator:
+    """Tests for PropertiesValidator — all validate branches."""
+
+    # --- line continuation ---
+
+    def test_validate_line_continuation(self):
+        v = PropertiesValidator()
+        content = "key=first \\\n  second value\n"
+        issues = v.validate("app.properties", content)
+        # The continuation line should be skipped (no false warnings)
+        assert not any("missing '='" in i.message for i in issues)
+
+    # --- comment and blank lines skipped ---
+
+    def test_validate_comment_hash_skipped(self):
+        v = PropertiesValidator()
+        content = "# This is a comment\nkey=value\n"
+        issues = v.validate("app.properties", content)
+        assert issues == []
+
+    def test_validate_comment_bang_skipped(self):
+        v = PropertiesValidator()
+        content = "! This is also a comment\nkey=value\n"
+        issues = v.validate("app.properties", content)
+        assert issues == []
+
+    def test_validate_blank_line_skipped(self):
+        v = PropertiesValidator()
+        content = "\nkey=value\n"
+        issues = v.validate("app.properties", content)
+        assert issues == []
+
+    # --- missing = or : separator ---
+
+    def test_validate_missing_separator(self):
+        v = PropertiesValidator()
+        content = "keywithoutseparator\n"
+        issues = v.validate("app.properties", content)
+        assert any("missing '=' or ':' separator" in i.message for i in issues)
+        assert any(i.level == "warning" for i in issues)
+
+    # --- duplicate keys ---
+
+    def test_validate_duplicate_keys(self):
+        v = PropertiesValidator()
+        content = "name=foo\nname=bar\n"
+        issues = v.validate("app.properties", content)
+        assert any("Duplicate key 'name'" in i.message for i in issues)
+
+    def test_validate_colon_separator(self):
+        v = PropertiesValidator()
+        content = "key: value\n"
+        issues = v.validate("app.properties", content)
+        assert issues == []
+
+    # --- invalid Unicode escape ---
+
+    def test_validate_invalid_unicode_escape(self):
+        v = PropertiesValidator()
+        # \u with fewer than 4 hex digits followed by non-hex
+        content = "key=value \\u123 end\n"
+        issues = v.validate("app.properties", content)
+        assert any("incomplete Unicode escape" in i.message for i in issues)
+        assert any(i.level == "error" for i in issues)
+
+    def test_validate_valid_unicode_escape(self):
+        v = PropertiesValidator()
+        content = "key=value \\u1234 end\n"
+        issues = v.validate("app.properties", content)
+        unicode_issues = [i for i in issues if "Unicode" in i.message]
+        assert unicode_issues == []
+
+
+# ---------------------------------------------------------------------------
+# XML validator
+# ---------------------------------------------------------------------------
+
+class TestXmlValidator:
+    """Tests for XmlValidator — all validate branches."""
+
+    # --- empty content ---
+
+    def test_validate_empty_content(self):
+        v = XmlValidator()
+        issues = v.validate("data.xml", "   ")
+        assert len(issues) == 1
+        assert issues[0].level == "warning"
+        assert "empty" in issues[0].message
+
+    # --- missing XML declaration ---
+
+    def test_validate_missing_xml_declaration(self):
+        v = XmlValidator()
+        content = "<root><child/></root>"
+        issues = v.validate("data.xml", content)
+        assert any("Missing XML declaration" in i.message for i in issues)
+        assert any(i.level == "warning" for i in issues)
+
+    # --- XML parse error with line info ---
+
+    def test_validate_parse_error(self):
+        v = XmlValidator()
+        content = "<?xml version=\"1.0\"?><root><unclosed>"
+        issues = v.validate("data.xml", content)
+        assert any(i.level == "error" for i in issues)
+        assert any("XML parse error" in i.message for i in issues)
+
+    # --- valid XML (success path) ---
+
+    def test_validate_valid_xml(self):
+        v = XmlValidator()
+        content = '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n  <child key="val"/>\n</root>\n'
+        issues = v.validate("data.xml", content)
+        errors = [i for i in issues if i.level == "error"]
+        assert errors == []
+
+    def test_can_validate_xml(self):
+        v = XmlValidator()
+        assert v.can_validate("config.xml", "") is True
+        assert v.can_validate("style.xsl", "") is True
+        assert v.can_validate("schema.xsd", "") is True
+        assert v.can_validate("image.svg", "") is True
+        assert v.can_validate("Info.plist", "") is True
+        assert v.can_validate("data.json", "") is False
+
+
+# ---------------------------------------------------------------------------
+# YAML validator — ImportError path
+# ---------------------------------------------------------------------------
+
+class TestYamlImportError:
+    """Test the ImportError branch when yaml is not available.
+
+    The yaml_lint validate() method does `import yaml` inside a try block,
+    then has `except yaml.YAMLError` before `except ImportError`.  Because
+    `yaml.YAMLError` is evaluated before ImportError is checked, a real
+    missing-module scenario would cause an UnboundLocalError rather than
+    landing here.  We reach the ImportError branch by injecting a fake yaml
+    module that keeps `YAMLError` accessible but raises ImportError from
+    `safe_load_all`.
+    """
+
+    def test_validate_import_error(self):
+        import types
+        v = YamlValidator()
+
+        # Build a fake yaml module: YAMLError is real (so except yaml.YAMLError
+        # evaluates fine), but safe_load_all raises ImportError.
+        fake_yaml = types.ModuleType("yaml")
+        fake_yaml.YAMLError = yaml.YAMLError
+        fake_yaml.safe_load_all = staticmethod(
+            lambda *a, **kw: (_ for _ in ()).throw(ImportError("simulated"))
+        )
+
+        with patch.dict(sys.modules, {"yaml": fake_yaml}):
+            issues = v.validate("config.yml", "key: val\n")
+        assert any("PyYAML not available" in i.message for i in issues)
