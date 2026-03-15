@@ -23,6 +23,9 @@ def _exhaust_generator(gen):
     ``.value``.  This helper manually iterates so that the generator's
     ``return`` value (e.g. an exit code) is captured.
     """
+    import types
+    if not isinstance(gen, (types.GeneratorType, types.CoroutineType)) and not hasattr(gen, "__next__"):
+        raise TypeError(f"expected a generator, got {type(gen).__name__}")
     lines = []
     try:
         while True:

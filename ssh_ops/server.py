@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, PlainTextResponse
 import yaml as _pyyaml
 from ruamel.yaml import YAMLError as _RuamelYAMLError
 
-from ssh_ops.yaml_util import load_yaml, dump_yaml, dump_yaml_str, safe_load_str
+from ssh_ops.yaml_util import load_yaml, dump_yaml, dump_yaml_str, safe_load_str, yaml_transaction
 
 from .config import (
     AppConfig, TaskConfig, check_interactive_command, is_modifying_command,
@@ -217,11 +217,9 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
               {"remove": true} to remove.
         """
         try:
-            raw = load_yaml(config.config_path) or {}
-
             if body.get("remove"):
-                raw.pop("proxy", None)
-                dump_yaml(raw, config.config_path)
+                with yaml_transaction(config.config_path) as raw:
+                    raw.pop("proxy", None)
                 pool.disconnect_all()
                 config.reload()
                 await _broadcast("Proxy removed")
@@ -233,14 +231,14 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
             if not host or not user or not account:
                 return {"error": "host, user, and account are required"}
 
-            raw["proxy"] = {
-                "type": "psmp",
-                "host": host,
-                "user": user,
-                "account": account,
-                "auth": "otp",
-            }
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                raw["proxy"] = {
+                    "type": "psmp",
+                    "host": host,
+                    "user": user,
+                    "account": account,
+                    "auth": "otp",
+                }
             pool.disconnect_all()
             config.reload()
             await _broadcast(f"Proxy configured: {user}@{account}@*@{host}")
@@ -300,12 +298,11 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
             if not str(cmd).strip():
                 return {"error": f"alias '{name}' has empty command"}
         try:
-            raw = load_yaml(config.config_path) or {}
-            if aliases:
-                raw["aliases"] = {str(k).strip(): str(v).strip() for k, v in aliases.items()}
-            else:
-                raw.pop("aliases", None)
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                if aliases:
+                    raw["aliases"] = {str(k).strip(): str(v).strip() for k, v in aliases.items()}
+                else:
+                    raw.pop("aliases", None)
             config.reload()
             return {"status": "ok"}
         except Exception as e:
@@ -353,7 +350,6 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         try:
             old_connected = pool.connected_servers()
             config.reload()
-            executor.auto_backup = config.auto_backup
             pool.disconnect_all()
             msg = "Config reloaded: " + config.config_path.name
             if old_connected:
@@ -544,11 +540,10 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
             entry["groups"] = groups
 
         try:
-            raw = load_yaml(config.config_path) or {}
-            if "servers" not in raw:
-                raw["servers"] = []
-            raw["servers"].append(entry)
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                if "servers" not in raw:
+                    raw["servers"] = []
+                raw["servers"].append(entry)
             config.reload()
             return {"status": "ok", "server": entry}
         except Exception as e:
@@ -594,19 +589,18 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
             return {"error": "password cannot be empty; omit the field to keep current password"}
 
         try:
-            raw = load_yaml(config.config_path) or {}
-            servers = raw.get("servers", [])
-            if idx < 0 or idx >= len(servers):
-                return {"error": "index out of range"}
-            if password is None:
-                return {"status": "ok", "message": "no change"}
-            if master_password:
-                from ssh_ops.crypto import encrypt_value, _get_salt
-                salt = _get_salt(config.config_path)
-                password = encrypt_value(password, master_password, salt)
-            servers[idx]["password"] = password
-            dump_yaml(raw, config.config_path)
-            server_name = servers[idx].get("name") or servers[idx].get("host", "")
+            with yaml_transaction(config.config_path) as raw:
+                servers = raw.get("servers", [])
+                if idx < 0 or idx >= len(servers):
+                    return {"error": "index out of range"}
+                if password is None:
+                    return {"status": "ok", "message": "no change"}
+                if master_password:
+                    from ssh_ops.crypto import encrypt_value, _get_salt
+                    salt = _get_salt(config.config_path)
+                    password = encrypt_value(password, master_password, salt)
+                servers[idx]["password"] = password
+                server_name = servers[idx].get("name") or servers[idx].get("host", "")
             # Disconnect so next connect uses new password
             pool.disconnect(server_name)
             config.reload()
@@ -624,13 +618,11 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         if not isinstance(idx, int):
             return {"error": "index must be an integer"}
         try:
-            raw = load_yaml(config.config_path) or {}
-            servers = raw.get("servers", [])
-            if idx < 0 or idx >= len(servers):
-                return {"error": "index out of range"}
-            removed = servers.pop(idx)
-            dump_yaml(raw, config.config_path)
-            # Disconnect removed server if connected
+            with yaml_transaction(config.config_path) as raw:
+                servers = raw.get("servers", [])
+                if idx < 0 or idx >= len(servers):
+                    return {"error": "index out of range"}
+                removed = servers.pop(idx)
             removed_name = removed.get("name") or removed.get("host", "")
             pool.disconnect(removed_name)
             config.reload()
@@ -738,10 +730,12 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         if parsed is not None and not isinstance(parsed, dict):
             return {"error": "Global config must be a YAML mapping"}
         try:
-            bak = GLOBAL_CONFIG.with_suffix(".yml.bak")
-            if GLOBAL_CONFIG.exists():
-                shutil.copy2(GLOBAL_CONFIG, bak)
-            GLOBAL_CONFIG.write_text(yaml_text, encoding="utf-8")
+            from ssh_ops.yaml_util import _get_file_lock
+            with _get_file_lock(GLOBAL_CONFIG):
+                bak = GLOBAL_CONFIG.with_suffix(".yml.bak")
+                if GLOBAL_CONFIG.exists():
+                    shutil.copy2(GLOBAL_CONFIG, bak)
+                GLOBAL_CONFIG.write_text(yaml_text, encoding="utf-8")
             config.reload()
             await _broadcast("Global config updated and reloaded")
             return {"status": "ok"}
@@ -753,24 +747,36 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         """Return current safety settings for the frontend."""
         return config.get_safety_settings()
 
+    @app.get("/api/preferences")
+    async def get_preferences():
+        """Return UI preferences from global.yml."""
+        return config.preferences
+
+    @app.post("/api/update-preference")
+    async def update_preference(body: dict):
+        """Update one or more UI preferences. Body: {"key": "value", ...}"""
+        try:
+            with yaml_transaction(GLOBAL_CONFIG) as raw:
+                if "preferences" not in raw:
+                    raw["preferences"] = {}
+                for k, v in body.items():
+                    raw["preferences"][k] = v
+            config.reload()
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": _friendly_error(e)}
+
     @app.post("/api/update-safety")
     async def update_safety(body: dict):
         """Update safety section in global.yml and reload.
         Body: {"server_warn_patterns": [...], "auto_backup": {...}, "dest_check": {...}}
         """
         try:
-            # Load current global config
-            if GLOBAL_CONFIG.exists():
-                raw = load_yaml(GLOBAL_CONFIG) or {}
-            else:
-                raw = {}
-            # Update safety section
-            raw["safety"] = body
-            # Backup and save
             bak = GLOBAL_CONFIG.with_suffix(".yml.bak")
             if GLOBAL_CONFIG.exists():
                 shutil.copy2(GLOBAL_CONFIG, bak)
-            dump_yaml(raw, GLOBAL_CONFIG)
+            with yaml_transaction(GLOBAL_CONFIG) as raw:
+                raw["safety"] = body
             config.reload()
             await _broadcast("Safety settings updated")
             return {"status": "ok"}
@@ -897,11 +903,10 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
 
         # Read, append, write YAML
         try:
-            raw = load_yaml(config.config_path) or {}
-            if "tasks" not in raw:
-                raw["tasks"] = []
-            raw["tasks"].append(entry)
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                if "tasks" not in raw:
+                    raw["tasks"] = []
+                raw["tasks"].append(entry)
             config.reload()
             detail = entry.get("command") or f"{entry.get('src')} -> {entry.get('dest')}"
             await _broadcast(f"Task added to config: {detail}")
@@ -917,38 +922,36 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         Arbitrary: {"from": 0, "to": 2}
         """
         try:
-            raw = load_yaml(config.config_path) or {}
-            tasks = raw.get("tasks", [])
+            with yaml_transaction(config.config_path) as raw:
+                tasks = raw.get("tasks", [])
 
-            if "from_index" in body and "to_index" in body:
-                frm = body["from_index"]
-                to = body["to_index"]
-                if not isinstance(frm, int) or not isinstance(to, int):
-                    return {"error": "from and to must be integers"}
-                if frm < 0 or frm >= len(tasks) or to < 0 or to >= len(tasks):
-                    return {"error": "index out of range"}
-                if frm == to:
-                    return {"status": "ok", "from": frm, "to": to}
-                task = tasks.pop(frm)
-                # Dragging down: pop shifts indices, adjust target
-                insert_at = to - 1 if frm < to else to
-                tasks.insert(insert_at, task)
-            else:
-                idx = body.get("index")
-                direction = body.get("direction", "")
-                if idx is None or not isinstance(idx, int):
-                    return {"error": "index must be an integer"}
-                if direction not in ("up", "down"):
-                    return {"error": "direction must be 'up' or 'down'"}
-                if idx < 0 or idx >= len(tasks):
-                    return {"error": "index out of range"}
-                new_idx = idx - 1 if direction == "up" else idx + 1
-                if new_idx < 0 or new_idx >= len(tasks):
-                    return {"error": "already at the edge"}
-                tasks[idx], tasks[new_idx] = tasks[new_idx], tasks[idx]
-                frm, to = idx, new_idx
+                if "from_index" in body and "to_index" in body:
+                    frm = body["from_index"]
+                    to = body["to_index"]
+                    if not isinstance(frm, int) or not isinstance(to, int):
+                        return {"error": "from and to must be integers"}
+                    if frm < 0 or frm >= len(tasks) or to < 0 or to >= len(tasks):
+                        return {"error": "index out of range"}
+                    if frm == to:
+                        return {"status": "ok", "from": frm, "to": to}
+                    task = tasks.pop(frm)
+                    insert_at = to - 1 if frm < to else to
+                    tasks.insert(insert_at, task)
+                else:
+                    idx = body.get("index")
+                    direction = body.get("direction", "")
+                    if idx is None or not isinstance(idx, int):
+                        return {"error": "index must be an integer"}
+                    if direction not in ("up", "down"):
+                        return {"error": "direction must be 'up' or 'down'"}
+                    if idx < 0 or idx >= len(tasks):
+                        return {"error": "index out of range"}
+                    new_idx = idx - 1 if direction == "up" else idx + 1
+                    if new_idx < 0 or new_idx >= len(tasks):
+                        return {"error": "already at the edge"}
+                    tasks[idx], tasks[new_idx] = tasks[new_idx], tasks[idx]
+                    frm, to = idx, new_idx
 
-            dump_yaml(raw, config.config_path)
             config.reload()
             return {"status": "ok", "from": frm, "to": to}
         except Exception as e:
@@ -963,12 +966,11 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         if not isinstance(idx, int):
             return {"error": "index must be an integer"}
         try:
-            raw = load_yaml(config.config_path) or {}
-            tasks = raw.get("tasks", [])
-            if idx < 0 or idx >= len(tasks):
-                return {"error": "index out of range"}
-            removed = tasks.pop(idx)
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                tasks = raw.get("tasks", [])
+                if idx < 0 or idx >= len(tasks):
+                    return {"error": "index out of range"}
+                removed = tasks.pop(idx)
             config.reload()
             detail = removed.get("command") or f"{removed.get('src')} -> {removed.get('dest')}"
             await _broadcast(f"Task removed from config: {detail}")
@@ -1327,12 +1329,15 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
 
         import concurrent.futures
 
+        # Apply auto-backup wrapping if needed
+        wrapped = wrap_backup_command(command, config.auto_backup)
+
         def _run_one(server):
             session = pool.get_session(server.name)
             if not session:
                 return server.name, {"lines": ["Not connected"], "exit_code": -1}
             try:
-                lines, exit_code = _exhaust_generator(session.exec_command(command))
+                lines, exit_code = _exhaust_generator(session.exec_command(wrapped))
                 return server.name, {"lines": lines, "exit_code": exit_code or 0}
             except Exception as e:
                 return server.name, {"lines": [str(e)], "exit_code": -1}
@@ -1369,6 +1374,10 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         if not filename:
             return {"error": "filename is required"}
         result = validate_file(filename, content)
+        if result and config.disabled_plugins:
+            result = [r for r in result if r["plugin"] not in config.disabled_plugins]
+            if not result:
+                result = None
         return {"result": result}
 
     @app.get("/api/plugins")
@@ -1401,16 +1410,14 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         if not path.startswith("/"):
             return {"error": "path must be absolute"}
         try:
-            raw = load_yaml(config.config_path) or {}
-            if "logs" not in raw:
-                raw["logs"] = []
-            # Check duplicate name
-            for ls in raw["logs"]:
-                if ls.get("name") == name:
-                    return {"error": f"log source '{name}' already exists"}
-            entry = {"name": name, "path": path, "type": log_type}
-            raw["logs"].append(entry)
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                if "logs" not in raw:
+                    raw["logs"] = []
+                for ls in raw["logs"]:
+                    if ls.get("name") == name:
+                        return {"error": f"log source '{name}' already exists"}
+                entry = {"name": name, "path": path, "type": log_type}
+                raw["logs"].append(entry)
             config.reload()
             return {"status": "ok", "source": entry}
         except Exception as e:
@@ -1425,12 +1432,11 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
         if not isinstance(idx, int):
             return {"error": "index must be an integer"}
         try:
-            raw = load_yaml(config.config_path) or {}
-            logs = raw.get("logs", [])
-            if idx < 0 or idx >= len(logs):
-                return {"error": "index out of range"}
-            removed = logs.pop(idx)
-            dump_yaml(raw, config.config_path)
+            with yaml_transaction(config.config_path) as raw:
+                logs = raw.get("logs", [])
+                if idx < 0 or idx >= len(logs):
+                    return {"error": "index out of range"}
+                removed = logs.pop(idx)
             config.reload()
             return {"status": "ok", "removed": removed}
         except Exception as e:
@@ -1807,7 +1813,7 @@ def create_app(config: AppConfig, logger: ExecLogger, master_password: str | Non
     async def _broadcast(message: str, source_client: str = ""):
         output_history.append(message)
         # Build the wire message: tag text output with source for client-side filtering
-        if source_client and message and message[0] == '{':
+        if source_client and message and message[0] == '{':  # pragma: no cover — only reached via _broadcast_from_thread
             # Already JSON (progress, server_status) — inject source field
             try:
                 obj = json.loads(message)

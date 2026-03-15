@@ -229,52 +229,70 @@ def wrap_backup_command(command: str, cfg: AutoBackupConfig) -> str:
                 bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
                 return (
                     f"{cd_prefix}"
-                    f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
-                    f"echo '[backup] {target} -> {backup_dir}'; "
+                    f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak} && echo '[backup] {target} -> {backup_dir}'; then "
                     f"{work_cmd}; "
-                    f"else echo '[WARN] backup failed for {target} — command aborted'; exit 1; fi"
+                    f"else echo '[WARN] backup failed — command aborted'; exit 1; fi"
                 )
 
     if base_cmd not in cfg.commands:
         return command
 
-    # Extract target path based on command type
-    target = None
+    # Extract target paths based on command type
+    targets = []
     if base_cmd == "rm":
-        # rm [flags] path — last non-flag arg
-        for p in reversed(parts[1:]):
+        # rm [flags] path1 path2 ... — all non-flag args
+        for p in parts[1:]:
             if not p.startswith("-"):
-                target = p
-                break
+                targets.append(p)
     elif base_cmd == "mv":
         # mv [flags] src dest — backup src (first non-flag arg)
         for p in parts[1:]:
             if not p.startswith("-"):
-                target = p
+                targets.append(p)
                 break
     else:
         return command
 
-    if not target:
+    if not targets:
         return command
 
-    # Skip backup for glob patterns — can't reliably backup wildcards
-    if any(c in target for c in '*?['):
-        return f"echo '[WARN] auto-backup skipped — wildcard target: {target}'; {command}"
+    # Filter out glob patterns and backup-dir targets
+    backup_targets = []
+    has_glob = False
+    for t in targets:
+        if any(c in t for c in '*?['):
+            has_glob = True
+            continue
+        if t.rstrip("/") == backup_dir or t.rstrip("/").startswith(backup_dir + "/"):
+            continue
+        backup_targets.append(t)
 
-    # Skip backup for files inside the backup directory itself
-    if target.rstrip("/") == backup_dir or target.rstrip("/").startswith(backup_dir + "/"):
+    if not backup_targets:
+        if has_glob:
+            glob_targets = [t for t in targets if any(c in t for c in '*?[')]
+            return f"echo '[WARN] auto-backup skipped — wildcard target: {glob_targets[0]}'; {command}"
         return command
 
-    clean = target.rstrip("/")
-    basename = clean.rsplit("/", 1)[-1] if "/" in clean else clean
-    bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
+    # Build chained backup commands for all targets
+    backup_cmds = []
+    for t in backup_targets:
+        clean = t.rstrip("/")
+        basename = clean.rsplit("/", 1)[-1] if "/" in clean else clean
+        bak = f"{backup_dir}/$(date +%Y%m%d_%H%M%S)_{basename}"
+        backup_cmds.append(
+            f"{sudo_pfx}cp -a {t} {bak} && echo '[backup] {t} -> {backup_dir}'"
+        )
+
+    glob_warn = ""
+    if has_glob:
+        glob_warn = "echo '[WARN] auto-backup skipped for wildcard targets'; "
+
     return (
         f"{cd_prefix}"
-        f"if {sudo_pfx}mkdir -p {backup_dir} && {sudo_pfx}cp -a {target} {bak}; then "
-        f"echo '[backup] {target} -> {backup_dir}'; "
+        f"if {sudo_pfx}mkdir -p {backup_dir} && {' && '.join(backup_cmds)}; then "
+        f"{glob_warn}"
         f"{work_cmd}; "
-        f"else echo '[WARN] backup failed for {target} — command aborted'; exit 1; fi"
+        f"else echo '[WARN] backup failed — command aborted'; exit 1; fi"
     )
 
 
@@ -616,6 +634,21 @@ class AppConfig:
             commands=dc.get("commands", ["cp", "mv", ">"]),
         )
 
+        # Disabled validation plugins
+        self.disabled_plugins: list[str] = safety.get("disabled_plugins", [])
+
+        # UI preferences (persisted in global.yml)
+        prefs = raw.get("preferences", {})
+        self.preferences: dict = {
+            "hide_timestamps": prefs.get("hide_timestamps", False),
+            "hide_progress": prefs.get("hide_progress", False),
+            "sync_output": prefs.get("sync_output", True),
+            "ls_cmd": prefs.get("ls_cmd", "ls -ltrah"),
+            "yaml_wrap": prefs.get("yaml_wrap", False),
+            "bookmarks": prefs.get("bookmarks", []),
+            "schedule": prefs.get("schedule", {}),
+        }
+
     @staticmethod
     def _validate_raw(raw: dict):
         """Validate parsed YAML structure without mutating any state.
@@ -666,6 +699,7 @@ class AppConfig:
                 "enabled": self.dest_check.enabled,
                 "commands": self.dest_check.commands,
             },
+            "disabled_plugins": self.disabled_plugins,
         }
 
     def get_server(self, name: str) -> ServerConfig | None:

@@ -1101,7 +1101,7 @@ function toggleTimestamps(btn) {
   btn.classList.toggle('active');
   var hidden = panels.classList.contains('hide-ts');
   btn.title = hidden ? 'Show timestamps' : 'Hide timestamps and prefixes';
-  try { localStorage.setItem('ssh-ops-hide-ts', hidden ? '1' : ''); } catch(e) {}
+  _savePref('hide_timestamps', hidden);
 }
 
 // --- Copy lines by category ---
@@ -1366,7 +1366,8 @@ if (!_clientId || sessionStorage.getItem('clientIdUsed')) {
 }
 sessionStorage.setItem('clientIdUsed', '1');
 window.addEventListener('beforeunload', function() { sessionStorage.removeItem('clientIdUsed'); });
-var _syncOutput = localStorage.getItem('syncOutput') !== '0';
+var _prefs = {};  // loaded from global.yml via /api/preferences
+var _syncOutput = true;
 (function() { var t = document.getElementById('clientIdTag'); if (t) t.textContent = '#' + _clientId.slice(0, 6); })();
 
 function connectWS() {
@@ -1601,18 +1602,43 @@ async function showPlugins() {
         [{text: 'Close', action: function(){}}]);
       return;
     }
+    var disabled = (_safetySettings && _safetySettings.disabled_plugins) || [];
     var html = '<p style="font-size:12px;color:#888;margin-bottom:10px">' +
-      'These plugins validate files before upload. Validation runs automatically when you upload a matching file.</p>' +
+      'These plugins validate files before upload. Toggle to enable/disable.</p>' +
       '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
       '<tr style="border-bottom:1px solid #e5e7eb"><th style="text-align:left;padding:4px 8px;color:#888">Plugin</th>' +
-      '<th style="text-align:left;padding:4px 8px;color:#888">Description</th></tr>';
+      '<th style="text-align:left;padding:4px 8px;color:#888">Description</th>' +
+      '<th style="text-align:center;padding:4px 8px;color:#888">Enabled</th></tr>';
     for (var i = 0; i < plugins.length; i++) {
+      var checked = disabled.indexOf(plugins[i].name) === -1 ? ' checked' : '';
       html += '<tr style="border-bottom:1px solid #f0f0f0">' +
-        '<td style="padding:5px 8px;font-weight:600;color:#2563eb;white-space:nowrap">' + plugins[i].name + '</td>' +
-        '<td style="padding:5px 8px;color:#555">' + plugins[i].description + '</td></tr>';
+        '<td style="padding:5px 8px;font-weight:600;color:#2563eb;white-space:nowrap">' + _escAttr(plugins[i].name) + '</td>' +
+        '<td style="padding:5px 8px;color:#555">' + _escAttr(plugins[i].description) + '</td>' +
+        '<td style="padding:5px 8px;text-align:center"><input type="checkbox" data-plugin="' + _escAttr(plugins[i].name) + '"' + checked + '></td></tr>';
     }
     html += '</table>';
-    _showModal('Validation Plugins', html, [{text: 'Close', action: function(){}}]);
+    _showModal('Validation Plugins', html, [
+      { text: 'Save', cls: 'primary', noAutoClose: true, action: async function() {
+        var newDisabled = [];
+        document.querySelectorAll('input[data-plugin]').forEach(function(cb) {
+          if (!cb.checked) newDisabled.push(cb.dataset.plugin);
+        });
+        // Save to global.yml via safety settings
+        var body = Object.assign({}, _safetySettings, { disabled_plugins: newDisabled });
+        var r = await fetch('/api/update-safety', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body)
+        });
+        var data = await r.json();
+        if (data.error) { appendLine('[ERROR] ' + data.error); }
+        else {
+          loadSafetySettings();
+          appendLine('Plugin settings saved' + (newDisabled.length ? ' (disabled: ' + newDisabled.join(', ') + ')' : ''));
+          _closeModal();
+        }
+      }},
+      { text: 'Cancel', action: function() {} }
+    ]);
   } catch (e) {
     appendLine('[ERROR] Could not load plugins: ' + e.message);
   }
@@ -2345,7 +2371,7 @@ function toggleProgress(btn) {
   document.body.classList.toggle('hide-progress');
   var hidden = document.body.classList.contains('hide-progress');
   btn.innerHTML = hidden ? 'P &#x2717;' : 'P &#x2713;';
-  try { localStorage.setItem('ssh-ops-hide-progress', hidden ? '1' : ''); } catch(e) {}
+  _savePref('hide_progress', hidden);
 }
 
 function toggleAllTasks() {
@@ -2422,7 +2448,11 @@ async function runSelectedTasks() {
     return;
   }
   if (warnings.length) {
-    appendLine('[WARN] Modifying commands: ' + warnings.join(', '));
+    var ok = await modalConfirm('Confirm Dangerous Tasks',
+      '<div style="margin-bottom:8px;color:#b91c1c;font-weight:bold">These tasks contain modifying commands:</div>'
+      + '<pre style="background:#f8f8f8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0;white-space:pre-wrap">' + _escAttr(warnings.join('\n')) + '</pre>'
+      + '<div style="font-size:12px;color:#555">Servers (' + servers.length + '): <b>' + _escAttr(servers.join(', ')) + '</b></div>');
+    if (!ok) return;
   }
 
   // If any upload/script tasks, ensure SFTP is ready on PSMP servers
@@ -3098,15 +3128,14 @@ var _schedCmd = '';
 var _schedInterval = 60;
 var _schedRunning = false;
 var _schedSilent = false;
+var _schedServers = [];  // frozen server list at schedule start
 
-function _schedKey(key) {
-  var cfg = document.getElementById('configSelect').value || 'default';
-  return 'sched:' + cfg + ':' + key;
-}
 function _loadSchedConfig() {
-  _schedCmd = localStorage.getItem(_schedKey('cmd')) || '';
-  _schedInterval = parseInt(localStorage.getItem(_schedKey('interval'))) || 60;
-  _schedSilent = localStorage.getItem(_schedKey('silent')) === '1';
+  var cfgKey = document.getElementById('configSelect').value || 'default';
+  var schedCfg = (_prefs.schedule || {})[cfgKey] || {};
+  _schedCmd = schedCfg.cmd || '';
+  _schedInterval = schedCfg.interval || 60;
+  _schedSilent = !!schedCfg.silent;
 }
 
 function openScheduleModal() {
@@ -3131,7 +3160,7 @@ function openScheduleModal() {
   _showModal('Schedule Periodic Command', html, buttons);
 }
 
-function startSchedule() {
+async function startSchedule() {
   var cmd = document.getElementById('schedCmdInput').value.trim();
   var interval = parseInt(document.getElementById('schedIntervalInput').value) || 60;
   if (!cmd) { appendLine('[ERROR] Enter a command for schedule'); return; }
@@ -3139,17 +3168,32 @@ function startSchedule() {
   if (err) { appendLine('[ERROR] ' + err); return; }
   if (interval < 10) interval = 10;
 
+  var names = getSelectedServers();
+  if (!names.length) { appendLine('[ERROR] No servers selected'); return; }
+
+  // Warn on modifying commands
+  if (isModifyingCmd(cmd)) {
+    var ok = await modalConfirm('Schedule Dangerous Command',
+      '<div style="margin-bottom:8px;color:#b91c1c;font-weight:bold">This command may modify the system and will run repeatedly without confirmation:</div>'
+      + '<pre style="background:#f8f8f8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0;white-space:pre-wrap">' + _escAttr(cmd) + '</pre>'
+      + '<div style="font-size:12px;color:#555">Every ' + interval + 's on: <b>' + _escAttr(names.join(', ')) + '</b></div>');
+    if (!ok) return;
+  }
+
   _schedCmd = cmd;
   _schedInterval = interval;
   _schedSilent = document.getElementById('schedSilentCheck').checked;
-  localStorage.setItem(_schedKey('cmd'), cmd);
-  localStorage.setItem(_schedKey('interval'), interval);
-  localStorage.setItem(_schedKey('silent'), _schedSilent ? '1' : '0');
+  _schedServers = names.slice();  // freeze server list
+  // Save schedule to preferences (per config name)
+  var cfgKey = document.getElementById('configSelect').value || 'default';
+  var schedAll = Object.assign({}, _prefs.schedule || {});
+  schedAll[cfgKey] = { cmd: cmd, interval: interval, silent: _schedSilent };
+  _savePref('schedule', schedAll);
   stopSchedule(true);
 
   _schedRunning = true;
   _updateSchedIndicator();
-  appendLine('[Schedule] Started: "' + cmd + '" every ' + interval + 's' + (_schedSilent ? ' (silent)' : ''));
+  appendLine('[Schedule] Started: "' + cmd + '" every ' + interval + 's on ' + names.join(', ') + (_schedSilent ? ' (silent)' : ''));
   _runScheduledCmd();
   _schedTimer = setInterval(_runScheduledCmd, interval * 1000);
   _closeModal();
@@ -3161,6 +3205,7 @@ function stopSchedule(silent) {
     appendLine('[Schedule] Stopped');
   }
   _schedRunning = false;
+  _schedServers = [];
   _updateSchedIndicator();
 }
 
@@ -3172,7 +3217,7 @@ async function _runScheduledCmd() {
     _updateSchedIndicator();
     return;
   }
-  var names = getSelectedServers();
+  var names = _schedServers.length ? _schedServers : getSelectedServers();
   if (!names.length) {
     if (!_schedSilent) appendLine('[Schedule] No servers selected, skipping');
     return;
@@ -3188,7 +3233,9 @@ function _updateSchedIndicator() {
   if (_schedRunning) {
     el.style.display = '';
     var prefix = _schedSilent ? '\uD83D\uDD07 ' : '';
-    label.textContent = prefix + _schedInterval + 's: ' + (_schedCmd.length > 30 ? _schedCmd.substring(0, 30) + '...' : _schedCmd);
+    var serverInfo = _schedServers.length ? ' (' + _schedServers.length + ' servers)' : '';
+    label.textContent = prefix + _schedInterval + 's: ' + (_schedCmd.length > 30 ? _schedCmd.substring(0, 30) + '...' : _schedCmd) + serverInfo;
+    label.title = _schedServers.length ? 'Servers: ' + _schedServers.join(', ') : '';
   } else {
     el.style.display = 'none';
   }
@@ -3386,6 +3433,15 @@ async function runCompare() {
 
   var names = getSelectedServers();
   if (names.length < 2) { appendLine('[ERROR] Compare needs at least 2 servers selected'); return; }
+
+  // Modifying command confirmation (same as runCommand)
+  if (isModifyingCmd(cmd)) {
+    var ok = await modalConfirm('Confirm Dangerous Command (Compare)',
+      '<div style="margin-bottom:8px;color:#b91c1c;font-weight:bold">This command may modify the system:</div>'
+      + '<pre style="background:#f8f8f8;padding:8px;border-radius:4px;font-size:13px;margin:0 0 8px 0;white-space:pre-wrap">' + _escAttr(cmd) + '</pre>'
+      + '<div style="font-size:12px;color:#555">Servers (' + names.length + '): <b>' + _escAttr(names.join(', ')) + '</b></div>');
+    if (!ok) return;
+  }
 
   var serverCmd = _cwdPrependCmd(cmd);
   appendLine('[Compare] Running "' + cmd + '" on ' + names.length + ' servers...');
@@ -3621,7 +3677,7 @@ async function viewTasksYaml() {
   var res = await fetch('/api/tasks-yaml');
   var text = await res.text();
   var cfgName = document.getElementById('configSelect').selectedOptions[0].textContent;
-  var wrap = localStorage.getItem('yamlWrap') === 'true';
+  var wrap = !!_prefs.yaml_wrap;
   document.querySelector('.modal').classList.add('wide');
   _showModal(cfgName + ' — Tasks', '<div class="yaml-editor-wrap"><textarea id="yamlEditorArea"></textarea></div>', [
     { text: 'Close', cls: 'primary', action: function() {} }
@@ -3652,7 +3708,7 @@ async function viewTasksYaml() {
       cm.refresh();
       document.getElementById('yamlWrapToggle').addEventListener('change', function() {
         cm.setOption('lineWrapping', this.checked);
-        localStorage.setItem('yamlWrap', this.checked);
+        _savePref('yaml_wrap', this.checked);
       });
     }
   }, 50);
@@ -3662,7 +3718,7 @@ async function editConfigYaml() {
   var res = await fetch('/api/config-yaml?raw=1');
   var text = await res.text();
   var cfgName = document.getElementById('configSelect').selectedOptions[0].textContent;
-  var wrap = localStorage.getItem('yamlWrap') === 'true';
+  var wrap = !!_prefs.yaml_wrap;
   var _cm = null;
   document.querySelector('.modal').classList.add('wide');
   _showModal(cfgName + ' — Edit Config',
@@ -3718,7 +3774,7 @@ async function editConfigYaml() {
       _cm.refresh();
       document.getElementById('yamlWrapToggle').addEventListener('change', function() {
         _cm.setOption('lineWrapping', this.checked);
-        localStorage.setItem('yamlWrap', this.checked);
+        _savePref('yaml_wrap', this.checked);
       });
     }
   }, 50);
@@ -3727,7 +3783,7 @@ async function editConfigYaml() {
 async function editGlobalConfig() {
   var res = await fetch('/api/global-config');
   var text = await res.text();
-  var wrap = localStorage.getItem('yamlWrap') === 'true';
+  var wrap = !!_prefs.yaml_wrap;
   var _cm = null;
   document.querySelector('.modal').classList.add('wide');
   _showModal('Global Config',
@@ -3780,7 +3836,7 @@ async function editGlobalConfig() {
       _cm.refresh();
       document.getElementById('yamlWrapToggle').addEventListener('change', function() {
         _cm.setOption('lineWrapping', this.checked);
-        localStorage.setItem('yamlWrap', this.checked);
+        _savePref('yaml_wrap', this.checked);
       });
     }
   }, 50);
@@ -3941,9 +3997,9 @@ async function showSafetySettings() {
       };
       var newLs = (document.getElementById('sfLsCmd').value.trim()) || 'ls -ltrah';
       _lsCmd = newLs;
-      localStorage.setItem('lsCmd', newLs);
+      _savePref('ls_cmd', newLs);
       _syncOutput = document.getElementById('sfSyncOutput').checked;
-      localStorage.setItem('syncOutput', _syncOutput ? '1' : '0');
+      _savePref('sync_output', _syncOutput);
       var r = await fetch('/api/update-safety', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(body)
@@ -4395,7 +4451,7 @@ var _FP_RE = /(\/(?:[a-zA-Z0-9._-]+\/)*[a-zA-Z0-9._-]+(?:\.[a-zA-Z0-9]+)?\/?)/g;
 var _LS_FILE_RE = /\d{2}:\d{2}\s+(.+)$|[A-Z][a-z]{2}\s+\d+\s+\d{4}\s+(.+)$/;
 var _fpCurrentPath = '';
 var _fpCurrentServer = '';
-var _lsCmd = localStorage.getItem('lsCmd') || 'ls -ltrah';
+var _lsCmd = 'ls -ltrah';
 var _fpLastDir = '';  // directory context from command headers
 var _fpIsListCmd = false;  // whether last command was ls/ll/find
 
@@ -4839,9 +4895,7 @@ function _cwdSet(path) {
   _cwdBookmarkSync();
 }
 
-// --- Directory Bookmarks (localStorage, global across servers) ---
-var _bookmarkKey = 'sshops_dir_bookmarks';
-
+// --- Directory Bookmarks (saved in global.yml preferences) ---
 function _cwdBookmarkSync() {
   var el = document.getElementById('cwdBookmark');
   if (!el || !_cwd) return;
@@ -4853,12 +4907,11 @@ function _cwdBookmarkSync() {
 }
 
 function _bookmarkGet() {
-  try { return JSON.parse(localStorage.getItem(_bookmarkKey)) || []; }
-  catch(e) { return []; }
+  return (_prefs.bookmarks || []).slice();
 }
 
 function _bookmarkSave(list) {
-  localStorage.setItem(_bookmarkKey, JSON.stringify(list));
+  _savePref('bookmarks', list);
 }
 
 function _bookmarkAdd(path) {
@@ -4964,7 +5017,9 @@ function _cwdBookmarkClick(e) {
 
   document.body.appendChild(menu);
   setTimeout(function() {
-    document.addEventListener('click', function _close() { menu.remove(); document.removeEventListener('click', _close); }, { once: true });
+    function _close() { menu.remove(); document.removeEventListener('click', _close); window.removeEventListener('scroll', _close, true); }
+    document.addEventListener('click', _close, { once: true });
+    window.addEventListener('scroll', _close, { once: true, capture: true });
   }, 0);
 }
 
@@ -5163,26 +5218,49 @@ function _showHelpModal() {
   _showModal('SSH Ops — Help', html, [{ text: 'Close', cls: 'primary', action: function() {} }]);
 }
 
+async function _savePref(key, value) {
+  var body = {}; body[key] = value;
+  _prefs[key] = value;
+  await fetch('/api/update-preference', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+}
+
+async function loadPreferences() {
+  try {
+    var res = await fetch('/api/preferences');
+    _prefs = await res.json();
+  } catch(e) { _prefs = {}; }
+  // Apply preferences
+  _syncOutput = _prefs.sync_output !== false;
+  _lsCmd = _prefs.ls_cmd || 'ls -ltrah';
+  if (_prefs.hide_timestamps) {
+    var tBtn = document.querySelector('.panel-toolbar .tbtn');
+    if (tBtn) { tBtn.classList.add('active'); document.getElementById('tabPanels').classList.add('hide-ts'); }
+  }
+  if (_prefs.hide_progress) {
+    var pBtn = document.getElementById('btnToggleProgress');
+    if (pBtn) { pBtn.innerHTML = 'P &#x2717;'; document.body.classList.add('hide-progress'); }
+  }
+  // Restore schedule from preferences
+  var sched = _prefs.schedule || {};
+  var cfgName = document.getElementById('configSelect').value || 'default';
+  var schedCfg = sched[cfgName];
+  if (schedCfg) {
+    _schedCmd = schedCfg.cmd || '';
+    _schedInterval = schedCfg.interval || 60;
+    _schedSilent = !!schedCfg.silent;
+  }
+}
+
 // --- Init ---
 connectWS();
 loadConfigs();
 loadSafetySettings();
+loadPreferences();
 loadServers();
 loadTasks();
 loadCmdHistory();
 loadUploadHistory();
 loadAliases();
-// Restore T toggle state
-try {
-  if (localStorage.getItem('ssh-ops-hide-ts')) {
-    var tBtn = document.querySelector('.panel-toolbar .tbtn');
-    if (tBtn) { tBtn.classList.add('active'); document.getElementById('tabPanels').classList.add('hide-ts'); }
-  }
-  if (localStorage.getItem('ssh-ops-hide-progress')) {
-    var pBtn = document.getElementById('btnToggleProgress');
-    if (pBtn) { pBtn.innerHTML = 'P &#x2717;'; document.body.classList.add('hide-progress'); }
-  }
-} catch(e) {}
 
 // ── Log Analyzer ──────────────────────────────────────────────
 
